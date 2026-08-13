@@ -2,6 +2,9 @@
 
 Windows용 한글 친화 Markdown 뷰어입니다. 요구사항 정의서는 [doc/README.md](doc/README.md)를 참고하세요.
 
+- **GitHub**: <https://github.com/gustaf95/markdown-viewer> (private)
+- Git 저장소는 로컬 빌드 폴더(`C:\Users\gusta\c_works\markdown_viewer`)에 있습니다. Google Drive(H:) 쪽에는 `.git`을 두지 않습니다 (가상 드라이브에서 저장소 손상 위험).
+
 - **기술 스택**: Electron + TypeScript + markdown-it + KaTeX + highlight.js
 - **보안**: `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`, preload로 제한된 IPC API만 노출, DOMPurify로 HTML sanitize, CSP 적용
 - **한글 지원**: UTF-8 / UTF-8 BOM / UTF-16 / CP949(EUC-KR) 자동 감지 + 수동 인코딩 선택
