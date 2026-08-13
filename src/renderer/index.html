@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: blob: https: http:; font-src 'self' file: data:; base-uri 'none'; object-src 'none'" />
+  <title>Markdown Viewer</title>
+  <link rel="stylesheet" href="vendor/katex/katex.min.css" />
+  <link id="hljs-light" rel="stylesheet" href="vendor/hljs/github.min.css" />
+  <link id="hljs-dark" rel="stylesheet" href="vendor/hljs/github-dark.min.css" disabled />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-theme="light">
+  <header id="toolbar">
+    <button id="btn-open" title="파일 열기 (Ctrl+O)">📂 파일 열기</button>
+    <button id="btn-refresh" title="새로고침 (F5)">🔄 새로고침</button>
+    <span class="separator"></span>
+    <button id="btn-zoom-out" title="축소 (Ctrl+-)">－</button>
+    <span id="zoom-label" title="배율">100%</span>
+    <button id="btn-zoom-in" title="확대 (Ctrl+=)">＋</button>
+    <span class="separator"></span>
+    <button id="btn-theme" title="다크/라이트 모드 전환 (Ctrl+Shift+T)">🌙 다크</button>
+    <span id="file-name" title=""></span>
+  </header>
+
+  <main id="viewport">
+    <div id="empty-state">
+      <h1>Markdown Viewer</h1>
+      <p><kbd>Ctrl</kbd> + <kbd>O</kbd> 를 누르거나 <strong>파일 열기</strong> 버튼으로 문서를 여세요.</p>
+      <p class="hint">Markdown 파일을 이 창으로 끌어다 놓아도 됩니다. (.md / .markdown / .txt)</p>
+      <div id="recent-box" hidden>
+        <h2>최근 파일</h2>
+        <ul id="recent-list"></ul>
+      </div>
+    </div>
+    <article id="content" class="markdown-body" hidden></article>
+  </main>
+
+  <div id="loading" hidden><div class="spinner"></div><span>렌더링 중...</span></div>
+  <div id="toast" hidden></div>
+
+  <footer id="statusbar">
+    <label>인코딩
+      <select id="encoding-select" title="다시 열 때 사용할 인코딩">
+        <option value="auto" selected>자동 감지</option>
+        <option value="utf-8">UTF-8</option>
+        <option value="cp949">CP949</option>
+        <option value="euc-kr">EUC-KR</option>
+        <option value="utf-16le">UTF-16 LE</option>
+      </select>
+    </label>
+    <span id="status-encoding">-</span>
+    <span class="spacer"></span>
+    <span id="status-zoom">100%</span>
+    <span id="status-updated">-</span>
+  </footer>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,341 @@
+/* ==========================================================================
+   Markdown Viewer 스타일
+   - 한글 가독성 우선 글꼴/줄간격 (F-203, F-204, 9.1)
+   - 라이트/다크 테마: CSS 변수 (F-801)
+   ========================================================================== */
+
+:root {
+  --font-body: "Pretendard", "Noto Sans KR", "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", sans-serif;
+  --font-mono: "D2Coding", "Cascadia Code", "Consolas", monospace;
+  --zoom: 1;
+}
+
+body[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-soft: #f6f8fa;
+  --fg: #1f2328;
+  --fg-muted: #59636e;
+  --border: #d1d9e0;
+  --accent: #0969da;
+  --toolbar-bg: #f6f8fa;
+  --code-bg: #f6f8fa;
+  --blockquote-fg: #59636e;
+  --table-header-bg: #f3f4f6;
+  --error: #d1242f;
+}
+
+body[data-theme="dark"] {
+  --bg: #0d1117;
+  --bg-soft: #161b22;
+  --fg: #e6edf3;
+  --fg-muted: #9198a1;
+  --border: #30363d;
+  --accent: #4493f8;
+  --toolbar-bg: #161b22;
+  --code-bg: #161b22;
+  --blockquote-fg: #9198a1;
+  --table-header-bg: #21262d;
+  --error: #f85149;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* ---------------- 툴바 ---------------- */
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  user-select: none;
+}
+
+#toolbar button {
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+
+#toolbar .separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+#zoom-label {
+  font-size: 12px;
+  color: var(--fg-muted);
+  min-width: 42px;
+  text-align: center;
+}
+
+#file-name {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------- 본문 영역 ---------------- */
+#viewport {
+  flex: 1;
+  overflow-y: auto;
+  scroll-behavior: smooth; /* F-704 */
+}
+
+#content {
+  max-width: 980px;            /* 본문 최대 폭 (F-803, 9.2) */
+  margin: 0 auto;
+  padding: 32px 40px 80px;
+  font-size: calc(16px * var(--zoom));
+  line-height: 1.7;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* 시작 화면 */
+#empty-state {
+  max-width: 640px;
+  margin: 10vh auto 0;
+  padding: 0 24px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+#empty-state h1 { color: var(--fg); font-size: 32px; }
+#empty-state kbd {
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-soft);
+}
+#empty-state .hint { font-size: 13px; }
+#recent-box { text-align: left; margin-top: 32px; }
+#recent-box h2 { font-size: 15px; color: var(--fg); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+#recent-list { list-style: none; padding: 0; margin: 8px 0; }
+#recent-list li {
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;   /* 긴 경로는 뒤쪽(파일명)이 보이도록 */
+  text-align: left;
+}
+#recent-list li:hover { background: var(--bg-soft); color: var(--accent); }
+
+/* ---------------- Markdown 본문 스타일 ---------------- */
+.markdown-body h1, .markdown-body h2 {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+}
+.markdown-body h1 { font-size: 2em; margin: 0.8em 0 0.6em; }
+.markdown-body h2 { font-size: 1.5em; margin: 1em 0 0.6em; }
+.markdown-body h3 { font-size: 1.25em; }
+.markdown-body h4 { font-size: 1.1em; }
+
+.markdown-body p { margin: 0.8em 0; }
+
+.markdown-body a { color: var(--accent); text-decoration: none; }
+.markdown-body a:hover { text-decoration: underline; }
+
+.markdown-body ul, .markdown-body ol { padding-left: 1.8em; margin: 0.6em 0; }
+.markdown-body li { margin: 0.25em 0; }
+.markdown-body li.task-list-item { list-style: none; margin-left: -1.4em; }
+.markdown-body li.task-list-item input { margin-right: 0.5em; vertical-align: middle; }
+
+.markdown-body blockquote {
+  margin: 1em 0;
+  padding: 0.2em 1em;
+  color: var(--blockquote-fg);
+  border-left: 4px solid var(--border);
+  background: var(--bg-soft);
+  border-radius: 0 6px 6px 0;
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 2px solid var(--border);
+  margin: 2em 0;
+}
+
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.img-fallback {
+  display: inline-block;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 0.9em;
+  background: var(--bg-soft);
+}
+
+/* 인라인 코드 */
+.markdown-body code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+/* 코드 블록 (F-405: 가로 스크롤) */
+.code-block { position: relative; margin: 1em 0; }
+.code-block pre {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.code-block pre code {
+  display: block;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 0.9em;
+  line-height: 1.55;
+  white-space: pre;
+}
+.copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 11px;
+  font-family: var(--font-body);
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.code-block:hover .copy-btn { opacity: 1; }
+.copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* 표 (F-501~F-504): 넓은 표는 내부 가로 스크롤 */
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: normal;
+}
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+}
+.markdown-body th {
+  background: var(--table-header-bg);
+  font-weight: 600;
+}
+.markdown-body tr:nth-child(2n) td { background: var(--bg-soft); }
+
+/* 수식 */
+.markdown-body .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.render-error { color: var(--error); font-weight: 600; }
+
+/* ---------------- 로딩/토스트 ---------------- */
+#loading {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  font-size: 14px;
+  z-index: 20;
+}
+#loading[hidden], #toast[hidden] { display: none; }
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#toast {
+  position: fixed;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--fg);
+  color: var(--bg);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  z-index: 30;
+  max-width: 80vw;
+  white-space: pre-wrap;
+}
+
+/* ---------------- 상태 표시줄 ---------------- */
+#statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--toolbar-bg);
+  font-size: 12px;
+  color: var(--fg-muted);
+  flex: none;
+  user-select: none;
+}
+#statusbar label { display: flex; align-items: center; gap: 6px; }
+#statusbar select {
+  font-family: var(--font-body);
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+#statusbar .spacer { flex: 1; }

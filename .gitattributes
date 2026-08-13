@@ -1,0 +1,9 @@
+# 기본: 텍스트 파일 자동 감지, 커밋 시 LF 정규화
+* text=auto
+
+# CP949 인코딩 테스트 파일은 변환 없이 바이트 그대로 보존
+test-docs/encoding-cp949.md -text
+
+# 바이너리 자산
+*.png binary
+*.ico binary

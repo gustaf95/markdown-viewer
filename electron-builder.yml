@@ -1,0 +1,39 @@
+appId: com.gustaf95.markdownviewer
+productName: Markdown Viewer
+copyright: Copyright © 2026 gustaf95
+
+directories:
+  output: release
+  buildResources: assets
+
+files:
+  - dist/**
+  - package.json
+
+asar: true
+
+win:
+  icon: assets/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Markdown Viewer
+
+portable:
+  artifactName: "MarkdownViewer-${version}-portable.exe"
+
+fileAssociations:
+  - ext: md
+    name: Markdown 문서
+    role: Viewer
+  - ext: markdown
+    name: Markdown 문서
+    role: Viewer
