@@ -2,3 +2,8 @@ node_modules/
 dist/
 release/
 *.log
+
+# 개인 작업 환경 전용 (로컬에만 유지, 공개 저장소 제외)
+run-dev.cmd
+scripts/sync-from-drive.ps1
+scripts/sync-to-drive.ps1
