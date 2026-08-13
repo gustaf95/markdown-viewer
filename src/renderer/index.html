@@ -8,12 +8,17 @@
   <link rel="stylesheet" href="vendor/katex/katex.min.css" />
   <link id="hljs-light" rel="stylesheet" href="vendor/hljs/github.min.css" />
   <link id="hljs-dark" rel="stylesheet" href="vendor/hljs/github-dark.min.css" disabled />
+  <link rel="stylesheet" href="renderer.css" />
+  <link id="milkdown-light" rel="stylesheet" href="vendor/milkdown/frame.css" />
+  <link id="milkdown-dark" rel="stylesheet" href="vendor/milkdown/frame-dark.css" disabled />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-theme="light">
   <header id="toolbar">
     <button id="btn-open" title="파일 열기 (Ctrl+O)">📂 파일 열기</button>
     <button id="btn-refresh" title="새로고침 (F5)">🔄 새로고침</button>
+    <button id="btn-edit" title="편집 모드로 전환 (Ctrl+E)">✏️ 편집</button>
+    <button id="btn-save" title="저장 (Ctrl+S)" hidden>💾 저장</button>
     <span class="separator"></span>
     <button id="btn-zoom-out" title="축소 (Ctrl+-)">－</button>
     <span id="zoom-label" title="배율">100%</span>
@@ -34,6 +39,7 @@
       </div>
     </div>
     <article id="content" class="markdown-body" hidden></article>
+    <div id="editor" hidden></div>
   </main>
 
   <div id="loading" hidden><div class="spinner"></div><span>렌더링 중...</span></div>

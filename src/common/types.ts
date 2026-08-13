@@ -25,7 +25,19 @@ export type AppCommand =
   | 'zoom-in'
   | 'zoom-out'
   | 'zoom-reset'
-  | 'theme-toggle';
+  | 'theme-toggle'
+  | 'edit-toggle'
+  | 'save'
+  | 'save-close';
+
+/** 파일 저장 결과 */
+export interface SaveResult {
+  ok: boolean;
+  error?: string;
+  savedAt?: number;
+  /** 저장에 사용된 인코딩 */
+  encoding?: string;
+}
 
 /** 인코딩 강제 지정 값 ('auto'면 자동 감지) */
 export type EncodingChoice = 'auto' | 'utf-8' | 'cp949' | 'euc-kr' | 'utf-16le';
@@ -39,6 +51,12 @@ export interface MdvApi {
   getRecentFiles(): Promise<string[]>;
   openExternal(url: string): Promise<void>;
   getPathForFile(file: File): string;
+  /** 편집 내용을 현재 파일에 원래 인코딩 그대로 저장 */
+  saveFile(content: string): Promise<SaveResult>;
+  /** 저장되지 않은 변경 여부를 main에 알림 (닫기 확인 대화상자용) */
+  notifyDirty(dirty: boolean): void;
+  /** 닫기 전 저장(save-close) 처리 결과 전달: 'close'면 창을 닫고 'cancel'이면 유지 */
+  resolveClose(action: 'close' | 'cancel'): void;
   onFileOpened(cb: (payload: FileOpenedPayload) => void): void;
   onFileError(cb: (payload: FileErrorPayload) => void): void;
   onCommand(cb: (cmd: AppCommand) => void): void;

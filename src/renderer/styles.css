@@ -276,6 +276,25 @@ body {
 .markdown-body .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
 .render-error { color: var(--error); font-weight: 600; }
 
+/* ---------------- 편집 모드 (Milkdown Crepe) ---------------- */
+#editor {
+  max-width: 1020px;
+  margin: 0 auto;
+  padding: 8px 20px 80px;
+}
+#editor[hidden] { display: none; }
+#editor .milkdown {
+  font-family: var(--font-body);
+  /* Crepe 기본 서체(명조 계열)를 뷰어와 동일한 한글 고딕 계열로 통일 */
+  --crepe-font-title: var(--font-body);
+  --crepe-font-default: var(--font-body);
+  --crepe-font-code: var(--font-mono);
+}
+/* 에디터 영역이 문서 배경과 자연스럽게 이어지도록 */
+#editor .milkdown .ProseMirror {
+  padding: 16px 20px;
+}
+
 /* ---------------- 로딩/토스트 ---------------- */
 #loading {
   position: fixed;

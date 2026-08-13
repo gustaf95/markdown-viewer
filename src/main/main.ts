@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import * as iconv from 'iconv-lite';
-import { AppCommand, EncodingChoice, FileOpenedPayload } from '../common/types';
+import { AppCommand, EncodingChoice, FileOpenedPayload, SaveResult } from '../common/types';
 
 const SUPPORTED_EXTENSIONS = ['.md', '.markdown', '.txt'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -14,6 +14,14 @@ let currentFilePath: string | null = null;
 /** 사용자가 상태 표시줄에서 강제로 지정한 인코딩 (null이면 자동 감지) */
 let encodingOverride: Exclude<EncodingChoice, 'auto'> | null = null;
 let watchedFilePath: string | null = null;
+/** 현재 파일을 읽을 때 실제 사용된 인코딩 — 저장 시 그대로 유지 */
+let currentEncoding = 'utf-8';
+/** 편집 모드에서 저장되지 않은 변경이 있는지 (renderer가 IPC로 갱신) */
+let docDirty = false;
+/** 닫기 확인 대화상자를 거친 뒤 실제로 창을 닫을 때 true */
+let forceClose = false;
+/** 자기 자신의 저장으로 인한 파일 변경을 감시에서 무시하기 위한 타임스탬프 */
+let lastSelfSaveAt = 0;
 
 // ---------------------------------------------------------------------------
 // 인코딩 처리 (F-006, F-205): BOM -> UTF-16 -> 엄격한 UTF-8 -> CP949 순으로 판별
@@ -40,6 +48,22 @@ function decodeBuffer(buf: Buffer, forced?: Exclude<EncodingChoice, 'auto'> | nu
     return { text: new TextDecoder('utf-8', { fatal: true }).decode(buf), encoding: 'utf-8' };
   } catch {
     return { text: iconv.decode(buf, 'cp949'), encoding: 'cp949' };
+  }
+}
+
+/** 저장 시 원래 인코딩 그대로 인코딩 (F-205: 편집해도 파일 인코딩이 바뀌지 않도록) */
+function encodeText(text: string, encoding: string): Buffer {
+  switch (encoding) {
+    case 'utf-8 (bom)':
+      return Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, 'utf8')]);
+    case 'cp949':
+    case 'euc-kr':
+      return iconv.encode(text, encoding);
+    case 'utf-16le':
+    case 'utf-16be':
+      return iconv.encode(text, encoding, { addBOM: true });
+    default:
+      return Buffer.from(text, 'utf8');
   }
 }
 
@@ -81,6 +105,20 @@ function addRecentFile(filePath: string): void {
 async function openFile(filePath: string, reason: FileOpenedPayload['reason']): Promise<void> {
   const win = mainWindow;
   if (!win) return;
+  // 편집 중 저장되지 않은 변경이 있으면 다른 파일 열기 전에 확인 (자동 새로고침 제외)
+  if (reason === 'open' && docDirty && filePath !== currentFilePath) {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      title: '저장되지 않은 변경',
+      message: '저장하지 않은 변경 내용이 있습니다.',
+      detail: '다른 파일을 열면 변경 내용이 사라집니다. 먼저 Ctrl+S로 저장할 수 있습니다.',
+      buttons: ['저장하지 않고 열기', '취소'],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (choice === 1) return;
+    docDirty = false;
+  }
   try {
     const stat = await fs.promises.stat(filePath);
     if (stat.size > MAX_FILE_SIZE) {
@@ -91,6 +129,7 @@ async function openFile(filePath: string, reason: FileOpenedPayload['reason']): 
     if (reason === 'open') encodingOverride = null; // 새 파일은 자동 감지부터
     const { text, encoding } = decodeBuffer(buf, encodingOverride);
 
+    currentEncoding = encoding;
     currentFilePath = filePath;
     watchFile(filePath);
     if (reason === 'open') addRecentFile(filePath);
@@ -117,6 +156,7 @@ function watchFile(filePath: string): void {
   if (watchedFilePath) fs.unwatchFile(watchedFilePath);
   watchedFilePath = filePath;
   fs.watchFile(filePath, { interval: 800 }, (curr, prev) => {
+    if (Date.now() - lastSelfSaveAt < 2000) return; // 자기 저장으로 인한 변경은 무시
     if (curr.mtimeMs !== prev.mtimeMs && curr.mtimeMs !== 0) {
       void openFile(filePath, 'watch');
     }
@@ -165,6 +205,9 @@ function rebuildMenu(): void {
           accelerator: 'F5',
           click: () => { if (currentFilePath) void openFile(currentFilePath, 'reload'); },
         },
+        { type: 'separator' },
+        { label: '편집 모드 전환', accelerator: 'CmdOrCtrl+E', click: () => sendCommand('edit-toggle') },
+        { label: '저장', accelerator: 'CmdOrCtrl+S', click: () => sendCommand('save') },
         { type: 'separator' },
         { label: '종료', accelerator: 'CmdOrCtrl+Q', role: 'quit' },
       ],
@@ -229,6 +272,27 @@ function createWindow(): void {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
   });
 
+  // 저장되지 않은 변경이 있으면 닫기 전에 확인
+  mainWindow.on('close', (event) => {
+    if (forceClose || !docDirty || !mainWindow) return;
+    event.preventDefault();
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      title: '저장되지 않은 변경',
+      message: '저장하지 않은 변경 내용이 있습니다. 저장할까요?',
+      buttons: ['저장 후 닫기', '저장하지 않고 닫기', '취소'],
+      defaultId: 0,
+      cancelId: 2,
+    });
+    if (choice === 0) {
+      // renderer가 저장을 마친 뒤 app:resolve-close('close')를 보내면 실제로 닫는다
+      mainWindow.webContents.send('app:command', 'save-close' satisfies AppCommand);
+    } else if (choice === 1) {
+      forceClose = true;
+      mainWindow.close();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -278,6 +342,15 @@ function setupSmokeTestIfRequested(): void {
   if (process.env.MDV_SMOKE_THEME === 'dark') {
     setTimeout(() => sendCommand('theme-toggle'), 1200);
   }
+  let captureDelay = 3000;
+  if (process.env.MDV_SMOKE_EDIT === '1') {
+    setTimeout(() => sendCommand('edit-toggle'), 1500);
+    captureDelay = 4500;
+    if (process.env.MDV_SMOKE_SAVE === '1') {
+      setTimeout(() => sendCommand('save'), 3200);
+      captureDelay = 5500;
+    }
+  }
   setTimeout(async () => {
     try {
       win.show();
@@ -296,7 +369,7 @@ function setupSmokeTestIfRequested(): void {
       console.error('[smoke] capture failed', err);
     }
     app.exit(0);
-  }, 3000);
+  }, captureDelay);
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +392,30 @@ function registerIpc(): void {
     if (currentFilePath) return openFile(currentFilePath, 'reload');
   });
   ipcMain.handle('recent:get', () => loadRecentFiles().filter((p) => fs.existsSync(p)));
+  ipcMain.handle('file:save', async (_e, content: unknown): Promise<SaveResult> => {
+    if (typeof content !== 'string') return { ok: false, error: '잘못된 저장 요청입니다.' };
+    if (!currentFilePath) return { ok: false, error: '열려 있는 파일이 없습니다.' };
+    try {
+      const buf = encodeText(content, currentEncoding);
+      lastSelfSaveAt = Date.now();
+      await fs.promises.writeFile(currentFilePath, buf);
+      lastSelfSaveAt = Date.now();
+      docDirty = false;
+      return { ok: true, savedAt: Date.now(), encoding: currentEncoding };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `저장에 실패했습니다: ${msg}` };
+    }
+  });
+  ipcMain.on('doc:dirty', (_e, dirty: unknown) => {
+    docDirty = dirty === true;
+  });
+  ipcMain.on('app:resolve-close', (_e, action: unknown) => {
+    if (action === 'close' && mainWindow) {
+      forceClose = true;
+      mainWindow.close();
+    }
+  });
   ipcMain.handle('shell:openExternal', (_e, url: unknown) => {
     if (typeof url === 'string' && /^(https?|mailto):/i.test(url)) {
       return shell.openExternal(url);

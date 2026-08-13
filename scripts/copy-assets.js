@@ -36,4 +36,9 @@ const hljsStyles = path.join(root, 'node_modules', 'highlight.js', 'styles');
 copy(path.join(hljsStyles, 'github.min.css'), path.join(out, 'vendor', 'hljs', 'github.min.css'));
 copy(path.join(hljsStyles, 'github-dark.min.css'), path.join(out, 'vendor', 'hljs', 'github-dark.min.css'));
 
+// Milkdown Crepe 편집기 테마 (라이트/다크 링크 토글용)
+const crepeTheme = path.join(root, 'node_modules', '@milkdown', 'crepe', 'lib', 'theme');
+copy(path.join(crepeTheme, 'frame', 'style.css'), path.join(out, 'vendor', 'milkdown', 'frame.css'));
+copy(path.join(crepeTheme, 'frame-dark', 'style.css'), path.join(out, 'vendor', 'milkdown', 'frame-dark.css'));
+
 console.log('assets copied to', out);

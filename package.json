@@ -8,7 +8,7 @@
   "main": "dist/main/main.js",
   "scripts": {
     "build:main": "tsc -p tsconfig.main.json",
-    "build:renderer": "esbuild src/renderer/renderer.ts --bundle --outfile=dist/renderer/renderer.js --platform=browser --target=chrome120 --sourcemap",
+    "build:renderer": "esbuild src/renderer/renderer.ts --bundle --outfile=dist/renderer/renderer.js --platform=browser --target=chrome120 --sourcemap --loader:.woff=file --loader:.woff2=file --loader:.ttf=file --loader:.otf=file --loader:.eot=file --asset-names=assets/[name]-[hash]",
     "build:assets": "node scripts/copy-assets.js",
     "build": "npm run build:main && npm run build:renderer && npm run build:assets",
     "typecheck": "tsc --noEmit",
@@ -20,6 +20,7 @@
     "iconv-lite": "^0.6.3"
   },
   "devDependencies": {
+    "@milkdown/crepe": "^7.22.1",
     "@types/katex": "^0.16.7",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.10.0",

@@ -83,12 +83,35 @@ Electron + TypeScript로 구현했으며, 렌더러 프로세스를 샌드박스
 
 - 열려 있는 파일이 외부 편집기에서 수정되면 **자동으로 다시 렌더링** (스크롤 위치 유지)
 - 수동 새로고침: `F5`, `Ctrl+R`, 툴바 버튼
+- 편집 모드에서는 편집 내용 보호를 위해 자동 새로고침이 일시 중지됨
+
+### 편집 모드 (Typora식 WYSIWYG)
+
+![편집 모드](docs/screenshots/edit-mode.png)
+
+`Ctrl+E` 또는 툴바 **✏️ 편집** 버튼으로 보기/편집 모드를 전환합니다. [Milkdown](https://milkdown.dev/)(ProseMirror 기반) 에디터를 통합해 Typora처럼 **렌더링된 문서를 직접 편집**할 수 있습니다.
+
+- 제목·굵게·목록·표 등을 렌더링된 모습 그대로 편집 (`/` 입력으로 블록 삽입 메뉴, 텍스트 선택 시 서식 툴바)
+- **수식**: 블록 수식을 클릭하면 raw LaTeX 편집기 + 실시간 미리보기가 열리고, 벗어나면 다시 렌더링됨 (Typora와 동일한 UX)
+- **코드 블록**: CodeMirror 내장 편집기 (줄 번호, 문법 강조, 언어 선택)
+- `Ctrl+S` 저장 — **원본 인코딩 그대로 저장** (CP949 문서는 CP949로 유지, 검증 완료)
+- 저장되지 않은 변경은 제목에 `●` 표시, 창을 닫거나 다른 파일을 열 때 확인 대화상자 표시
+
+편집 모드 참고 사항:
+
+| 항목 | 내용 |
+|---|---|
+| 서식 정규화 | 저장 시 Markdown이 표준형으로 정리될 수 있음 (예: `-` 목록 → `*`, 표 구분선 공백 정렬) |
+| `\(...\)` 수식 | 편집 모드에서는 일반 텍스트로 표시됨 (원문은 보존, 보기 모드에서는 정상 렌더링). 편집하려면 `$...$` 표기 사용 권장 |
+| HTML 포함 문서 | 원시 HTML 블록은 편집 모드에서 제한적으로 표시될 수 있음 |
 
 ## 키보드 단축키
 
 | 기능 | 단축키 |
 |---|---|
 | 파일 열기 | `Ctrl+O` |
+| 편집 모드 전환 | `Ctrl+E` |
+| 저장 | `Ctrl+S` |
 | 새로고침 | `F5` 또는 `Ctrl+R` |
 | 확대 / 축소 / 기본 크기 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (또는 `Ctrl+휠`) |
 | 다크/라이트 모드 전환 | `Ctrl+Shift+T` |
@@ -203,8 +226,9 @@ markdown-viewer/
 │  │  └─ preload.ts         # contextBridge로 제한된 API 노출
 │  ├─ renderer/
 │  │  ├─ index.html         # CSP 포함 기본 레이아웃
-│  │  ├─ renderer.ts        # UI 로직 (테마/배율/링크/드롭/복사)
+│  │  ├─ renderer.ts        # UI 로직 (테마/배율/링크/드롭/복사/편집 모드)
 │  │  ├─ markdown.ts        # markdown-it + KaTeX + highlight.js + DOMPurify
+│  │  ├─ editor.ts          # Milkdown Crepe WYSIWYG 편집기 래퍼
 │  │  └─ styles.css         # 한글 친화 스타일, 라이트/다크 테마
 │  └─ common/types.ts       # main <-> renderer 공유 타입
 ├─ assets/                  # 앱 아이콘
@@ -236,6 +260,7 @@ markdown-viewer/
 | 데스크톱 프레임워크 | [Electron](https://www.electronjs.org/) | 33 |
 | 언어 | TypeScript | 5.9 |
 | Markdown 파서 | [markdown-it](https://github.com/markdown-it/markdown-it) (+ task-lists, texmath) | 14 |
+| WYSIWYG 편집기 | [Milkdown Crepe](https://milkdown.dev/) (ProseMirror 기반) | 7 |
 | 수식 | [KaTeX](https://katex.org/) | 0.16 |
 | 코드 하이라이팅 | [highlight.js](https://highlightjs.org/) | 11 |
 | HTML sanitize | [DOMPurify](https://github.com/cure53/DOMPurify) | 3 |
@@ -248,7 +273,8 @@ markdown-viewer/
 - 코드 서명이 없어 첫 실행 시 SmartScreen 경고가 표시될 수 있음
 - 50MB를 초과하는 파일은 안전을 위해 열지 않음
 - 문서 내 앵커 링크(`#제목`)는 제목에 id가 부여되지 않아 아직 이동하지 않음
-- 편집 기능은 없음 (뷰어 전용 — 요구사항 정의서의 향후 확장 항목 참고)
+- 편집 모드에서 저장하면 Markdown 서식이 표준형으로 정규화될 수 있음 (내용은 동일)
+- 글자 확대/축소는 보기 모드에만 적용됨
 
 ## 라이선스
 
