@@ -189,7 +189,13 @@ npx electron . test-docs/mixed.md
 npm run dist
 ```
 
-`release/` 폴더에 NSIS 설치 파일과 포터블 exe(x64)가 생성됩니다. 앱 아이콘은 `assets/icon.ico`이며 `scripts/make-icon.js`로 재생성할 수 있습니다.
+`release/` 폴더에 NSIS 설치 파일과 포터블 exe(x64)가 생성됩니다.
+
+아이콘은 `assets/icon.ico`(256·128·64·48·32·24·16px) 하나를 앱 아이콘과 `.md` 파일 연결 아이콘에 함께 씁니다.
+원본 `assets/markdown-viewer-icon.png`를 고친 뒤 `npm run make:icons`로 재생성합니다.
+
+NSIS 설치 파일은 `.md` / `.markdown` 확장자를 이 앱에 연결하므로, 설치 후에는 파일을 더블클릭하면 바로 열립니다
+(포터블 exe는 레지스트리를 건드리지 않아 연결되지 않습니다).
 
 ### 패키징 문제 해결
 
@@ -218,7 +224,7 @@ markdown-viewer/
 ├─ docs/screenshots/        # README 스크린샷
 ├─ scripts/
 │  ├─ copy-assets.js        # 렌더러 정적 자산 복사
-│  ├─ make-icon.js          # PNG -> ICO 변환
+│  ├─ make-icons.js         # 원본 PNG -> 다중 해상도 ICO 변환
 │  └─ make-test-docs.js     # CP949 테스트 문서 생성
 ├─ src/
 │  ├─ main/

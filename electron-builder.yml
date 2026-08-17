@@ -30,10 +30,16 @@ nsis:
 portable:
   artifactName: "MarkdownViewer-${version}-portable.exe"
 
+# name 은 Windows 레지스트리의 ProgID(파일 클래스)로 그대로 쓰이므로 영문 식별자,
+# 탐색기에 표시되는 이름은 description 이다.
 fileAssociations:
   - ext: md
-    name: Markdown 문서
+    name: MarkdownViewer.md
+    description: Markdown 문서
+    icon: icon.ico
     role: Viewer
   - ext: markdown
-    name: Markdown 문서
+    name: MarkdownViewer.markdown
+    description: Markdown 문서
+    icon: icon.ico
     role: Viewer
