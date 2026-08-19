@@ -1,5 +1,6 @@
 import { renderMarkdown } from './markdown';
 import { createEditor, EditorHandle } from './editor';
+import { buildDocModel } from './docmodel';
 import type { EncodingChoice, ExportFormat, FileOpenedPayload, MdvApi } from '../common/types';
 
 declare global {
@@ -287,16 +288,25 @@ async function exportDocument(format: ExportFormat): Promise<void> {
   if (exporting) return; // 저장 대화상자가 이미 떠 있음
   exporting = true;
   showLoading('내보내는 중...');
+  // DocModel은 코드 강조 색을 계산된 스타일에서 읽으므로 라이트 테마에서 만들어야 한다
+  // (인쇄와 같은 정책: 배포용 문서는 흰 배경 기준)
+  const wasDark = theme === 'dark';
   try {
     if (editMode && editorHandle) {
       draftMarkdown = editorHandle.getMarkdown();
       renderIntoContent(draftMarkdown, currentFile.dirUrl);
     }
-    await waitForImages(content); // 아직 로드되지 않은 이미지는 임베드되지 않으므로 기다린다
-    const result = await mdv.exportDocument({ format, html: buildExportBody(), title: documentTitle() });
+    await waitForImages(content); // 로드되지 않은 이미지는 크기를 알 수 없고 임베드도 되지 않는다
+    if (wasDark) applyThemeStyles('light');
+    const request =
+      format === 'docx'
+        ? { format, title: documentTitle(), doc: buildDocModel(content, documentTitle()) }
+        : { format, title: documentTitle(), html: buildExportBody() };
+    const result = await mdv.exportDocument(request);
     if (result.ok) showToast(`내보냈습니다: ${result.filePath}`, 4000);
     else if (!result.canceled) showToast(result.error ?? '내보내기에 실패했습니다.', 5000);
   } finally {
+    if (wasDark) applyThemeStyles('dark');
     hideLoading();
     exporting = false;
   }
@@ -476,6 +486,7 @@ mdv.onCommand((cmd) => {
     case 'save': void saveDocument(); break;
     case 'print': void printDocument(); break;
     case 'export-html': void exportDocument('html'); break;
+    case 'export-docx': void exportDocument('docx'); break;
     case 'save-close':
       void saveDocument().then((ok) => mdv.resolveClose(ok ? 'close' : 'cancel'));
       break;

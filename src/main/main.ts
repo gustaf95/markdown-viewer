@@ -5,6 +5,7 @@ import { pathToFileURL } from 'url';
 import * as iconv from 'iconv-lite';
 import { AppCommand, EncodingChoice, ExportRequest, ExportResult, FileOpenedPayload, PrintResult, SaveResult } from '../common/types';
 import { buildExportedHtml } from './export-html';
+import { buildDocx } from './export-docx';
 
 const SUPPORTED_EXTENSIONS = ['.md', '.markdown', '.txt'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -25,6 +26,12 @@ let forceClose = false;
 let lastSelfSaveAt = 0;
 /** 스모크 테스트에서 저장 대화상자 없이 내보낼 경로 (없으면 평소처럼 대화상자를 띄운다) */
 const smokeExportPath = process.env.MDV_SMOKE_EXPORT ?? null;
+
+/** 내보내기 형식별 대화상자/확장자 정보 */
+const EXPORT_FORMATS = {
+  html: { label: 'HTML', ext: 'html', filter: 'HTML 문서' },
+  docx: { label: 'DOCX', ext: 'docx', filter: 'Word 문서' },
+} as const;
 
 // ---------------------------------------------------------------------------
 // 인코딩 처리 (F-006, F-205): BOM -> UTF-16 -> 엄격한 UTF-8 -> CP949 순으로 판별
@@ -237,6 +244,12 @@ function rebuildMenu(): void {
               enabled: currentFilePath !== null, // 문서가 없으면 비활성화
               click: () => sendCommand('export-html'),
             },
+            {
+              label: 'DOCX (Word)...',
+              accelerator: 'CmdOrCtrl+Shift+D',
+              enabled: currentFilePath !== null,
+              click: () => sendCommand('export-docx'),
+            },
           ],
         },
         { type: 'separator' },
@@ -375,8 +388,10 @@ function setupSmokeTestIfRequested(): void {
   }
   let captureDelay = 3000;
   if (smokeExportPath) {
-    setTimeout(() => sendCommand('export-html'), 2000);
-    captureDelay = 4500;
+    // MDV_SMOKE_EXPORT_FORMAT=docx 로 형식을 고를 수 있다 (기본 html)
+    const format: AppCommand = process.env.MDV_SMOKE_EXPORT_FORMAT === 'docx' ? 'export-docx' : 'export-html';
+    setTimeout(() => sendCommand(format), 2000);
+    captureDelay = 5000;
   }
   if (process.env.MDV_SMOKE_EDIT === '1') {
     setTimeout(() => sendCommand('edit-toggle'), 1500);
@@ -465,24 +480,31 @@ function registerIpc(): void {
       return { ok: false, error: `인쇄를 시작할 수 없습니다: ${msg}` };
     }
   });
-  // 내보내기 (F-1101): 렌더러가 보기용 DOM에서 뽑은 본문 HTML을 단일 파일 문서로 저장한다.
+  // 내보내기 (F-1101, F-1102): 렌더러가 보기용 DOM에서 뽑은 내용을 파일로 저장한다.
   ipcMain.handle('file:export', async (_e, request: unknown): Promise<ExportResult> => {
     const win = mainWindow;
     if (!win) return { ok: false, error: '내보낼 창을 찾을 수 없습니다.' };
     const req = request as Partial<ExportRequest> | null;
-    if (!req || req.format !== 'html' || typeof req.html !== 'string') {
+    if (!req || (req.format !== 'html' && req.format !== 'docx')) {
       return { ok: false, error: '잘못된 내보내기 요청입니다.' };
+    }
+    if (req.format === 'html' && typeof req.html !== 'string') {
+      return { ok: false, error: '내보낼 본문을 받지 못했습니다.' };
+    }
+    if (req.format === 'docx' && (!req.doc || !Array.isArray(req.doc.blocks))) {
+      return { ok: false, error: '내보낼 본문을 받지 못했습니다.' };
     }
     if (!currentFilePath) return { ok: false, error: '열려 있는 파일이 없습니다.' };
 
     const baseName = path.basename(currentFilePath, path.extname(currentFilePath));
+    const spec = EXPORT_FORMATS[req.format];
     let targetPath = smokeExportPath;
     if (!targetPath) {
       const result = await dialog.showSaveDialog(win, {
-        title: 'HTML로 내보내기',
+        title: `${spec.label}로 내보내기`,
         // 기본 저장 위치는 원본 문서와 같은 폴더
-        defaultPath: path.join(path.dirname(currentFilePath), `${baseName}.html`),
-        filters: [{ name: 'HTML 문서', extensions: ['html'] }],
+        defaultPath: path.join(path.dirname(currentFilePath), `${baseName}.${spec.ext}`),
+        filters: [{ name: spec.filter, extensions: [spec.ext] }],
       });
       if (result.canceled || !result.filePath) return { ok: false, canceled: true };
       targetPath = result.filePath;
@@ -490,8 +512,11 @@ function registerIpc(): void {
 
     try {
       const title = typeof req.title === 'string' && req.title.trim() ? req.title.trim() : baseName;
-      const html = buildExportedHtml(req.html, title);
-      await writeFileAtomic(targetPath, Buffer.from(html, 'utf8'));
+      const data =
+        req.format === 'html'
+          ? Buffer.from(buildExportedHtml(req.html ?? '', title), 'utf8')
+          : await buildDocx({ ...req.doc!, title });
+      await writeFileAtomic(targetPath, data);
       return { ok: true, filePath: targetPath };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

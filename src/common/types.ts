@@ -1,3 +1,5 @@
+import type { DocModel } from './docmodel';
+
 /** 파일이 열렸을 때 main -> renderer 로 전달되는 페이로드 */
 export interface FileOpenedPayload {
   /** 파일의 절대 경로 */
@@ -30,7 +32,8 @@ export type AppCommand =
   | 'save'
   | 'save-close'
   | 'print'
-  | 'export-html';
+  | 'export-html'
+  | 'export-docx';
 
 /** 파일 저장 결과 */
 export interface SaveResult {
@@ -49,16 +52,18 @@ export interface PrintResult {
   error?: string;
 }
 
-/** 내보내기 형식 (F-1101~) — HTML 우선 구현, DOCX/HWPX는 추후 확장 */
-export type ExportFormat = 'html';
+/** 내보내기 형식 (F-1101~) — HWPX는 추후 확장 */
+export type ExportFormat = 'html' | 'docx';
 
 /** renderer -> main 내보내기 요청 */
 export interface ExportRequest {
   format: ExportFormat;
-  /** 내보낼 본문 HTML (sanitize된 #content의 innerHTML, 앱 전용 UI 제거 상태) */
-  html: string;
-  /** 문서 제목 (<title>에 사용) */
+  /** 문서 제목 (HTML의 <title>, DOCX 문서 속성에 사용) */
   title: string;
+  /** html 형식: 내보낼 본문 HTML (sanitize된 #content의 innerHTML, 앱 전용 UI 제거 상태) */
+  html?: string;
+  /** docx 형식: 보기용 DOM에서 만든 중간 문서 모델 */
+  doc?: DocModel;
 }
 
 /** 내보내기 결과 */

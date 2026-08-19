@@ -108,6 +108,10 @@ Electron + TypeScript로 구현했으며, 렌더러 프로세스를 샌드박스
 ### 인쇄·내보내기
 
 - **인쇄** (`Ctrl+P`, 툴바 **🖨 인쇄**): 시스템 인쇄 대화상자로 출력. A4 15mm 여백, 툴바·상태바·복사 버튼 등 화면 전용 UI는 지면에서 제외되고, 화면에서 가로 스크롤로 처리하던 코드·표는 지면 폭에 맞춰 줄바꿈됩니다. 다크 모드로 보고 있어도 지면은 항상 흰 배경으로 출력됩니다.
+- **DOCX(Word)로 내보내기** (`파일 > 내보내기 > DOCX (Word)...`, `Ctrl+Shift+D`): 현재 문서를 Word 문서로 저장합니다.
+  - **수식은 Word 네이티브 수식 개체(OMML)로 변환** — 이미지가 아니라서 확대해도 깨지지 않고 Word 수식 편집기로 수정할 수 있습니다. KaTeX가 만든 MathML을 OMML로 옮기므로 분수·근호, 적분/시그마의 상하한, 행렬, 극한, 강조기호(\hat, \overline), 크기가 늘어나는 괄호(\left( ... \right))가 그대로 유지됩니다.
+  - 표(머리행 음영·정렬), 코드 블록(**구문 강조 색상 유지**, 회색 배경), 목록·중첩 목록, 체크박스(`☑`/`☐`), 인용문, 로컬 이미지, 하이퍼링크를 지원합니다.
+  - 본문은 맑은 고딕 10.5pt / 줄간격 1.3, A4 여백 20mm로 조판됩니다.
 - **HTML로 내보내기** (`파일 > 내보내기 > HTML...`, `Ctrl+Shift+H`): 현재 문서를 **단일 HTML 파일**로 저장합니다.
   - CSS(본문 스타일 · 코드 하이라이팅 · KaTeX)와 **KaTeX 폰트, 로컬 이미지를 모두 파일 안에 인라인 임베드** — 다른 PC로 옮기거나 메일에 첨부해도 브라우저에서 그대로 열립니다 (인터넷 연결 불필요)
   - 수식이 없는 문서에는 KaTeX 자산을 넣지 않아 파일이 불필요하게 커지지 않음
@@ -115,7 +119,7 @@ Electron + TypeScript로 구현했으며, 렌더러 프로세스를 샌드박스
   - 기본 저장 위치는 원본 문서와 같은 폴더, 기본 파일명은 `원본이름.html`
   - 편집 모드에서 내보내면 **편집 중인 내용** 기준으로 저장됩니다 (인쇄와 동일한 정책)
 
-> DOCX·HWPX 내보내기는 계획 단계입니다. 구현 계획은 [doc/ToDo.md](doc/ToDo.md)를 참고하세요.
+> HWPX(한글) 내보내기는 계획 단계입니다. 구현 계획은 [doc/ToDo.md](doc/ToDo.md)를 참고하세요.
 
 ## 키보드 단축키
 
@@ -126,6 +130,7 @@ Electron + TypeScript로 구현했으며, 렌더러 프로세스를 샌드박스
 | 저장 | `Ctrl+S` |
 | 인쇄 | `Ctrl+P` |
 | HTML로 내보내기 | `Ctrl+Shift+H` |
+| DOCX로 내보내기 | `Ctrl+Shift+D` |
 | 새로고침 | `F5` 또는 `Ctrl+R` |
 | 확대 / 축소 / 기본 크기 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (또는 `Ctrl+휠`) |
 | 다크/라이트 모드 전환 | `Ctrl+Shift+T` |
@@ -207,13 +212,17 @@ MDV_SMOKE_FILE=test-docs/mixed.md MDV_SMOKE_OUT=out.png npx electron .
 
 # 여기에 HTML 내보내기까지 수행 (대화상자 없이 지정 경로에 저장)
 MDV_SMOKE_FILE=test-docs/mixed.md MDV_SMOKE_OUT=out.png MDV_SMOKE_EXPORT=out.html npx electron .
+
+# DOCX로 내보내기
+MDV_SMOKE_FILE=test-docs/math.md MDV_SMOKE_OUT=out.png MDV_SMOKE_EXPORT=out.docx MDV_SMOKE_EXPORT_FORMAT=docx npx electron .
 ```
 
 | 환경변수 | 용도 |
 |---|---|
 | `MDV_SMOKE_FILE` | 열 문서 경로 (필수) |
 | `MDV_SMOKE_OUT` | 스크린샷 저장 경로 (필수) |
-| `MDV_SMOKE_EXPORT` | HTML 내보내기 결과 경로 (지정 시 저장 대화상자 생략) |
+| `MDV_SMOKE_EXPORT` | 내보내기 결과 경로 (지정 시 저장 대화상자 생략) |
+| `MDV_SMOKE_EXPORT_FORMAT` | `docx`면 DOCX로 내보낸다 (기본값 HTML) |
 | `MDV_SMOKE_THEME=dark` | 다크 모드로 전환 후 촬영 |
 | `MDV_SMOKE_EDIT=1` / `MDV_SMOKE_SAVE=1` | 편집 모드 전환 / 저장까지 수행 |
 
@@ -264,14 +273,19 @@ markdown-viewer/
 │  ├─ main/
 │  │  ├─ main.ts            # 창 생성, 메뉴, 파일 열기/감시, 인코딩 감지, IPC
 │  │  ├─ export-html.ts     # 단일 파일 HTML 내보내기 (CSS/폰트/이미지 인라인 임베드)
+│  │  ├─ export-docx.ts     # DOCX 내보내기 (docx 라이브러리로 조판)
+│  │  ├─ omml.ts            # MathML -> OMML(Word 네이티브 수식) 변환
 │  │  └─ preload.ts         # contextBridge로 제한된 API 노출
 │  ├─ renderer/
 │  │  ├─ index.html         # CSP 포함 기본 레이아웃
 │  │  ├─ renderer.ts        # UI 로직 (테마/배율/링크/드롭/복사/편집/인쇄/내보내기)
 │  │  ├─ markdown.ts        # markdown-it + KaTeX + highlight.js + DOMPurify
+│  │  ├─ docmodel.ts        # 보기용 DOM -> 내보내기 중간 모델(DocModel)
 │  │  ├─ editor.ts          # Milkdown Crepe WYSIWYG 편집기 래퍼
 │  │  └─ styles.css         # 한글 친화 스타일, 라이트/다크 테마
-│  └─ common/types.ts       # main <-> renderer 공유 타입
+│  └─ common/
+│     ├─ types.ts           # main <-> renderer 공유 타입
+│     └─ docmodel.ts        # 내보내기 중간 문서 모델 (DOCX/HWPX 공통 입력)
 ├─ assets/                  # 앱 아이콘
 └─ test-docs/               # 테스트 문서 모음
 ```
@@ -317,6 +331,7 @@ markdown-viewer/
 - 편집 모드에서 저장하면 Markdown 서식이 표준형으로 정규화될 수 있음 (내용은 동일)
 - 글자 확대/축소는 보기 모드에만 적용됨
 - HTML 내보내기: 10MB를 넘는 이미지와 외부(`http(s)`) 이미지는 임베드하지 않고 원본 경로를 유지함
+- DOCX 내보내기: 외부(`http(s)`) 이미지와 SVG는 넣지 않고 `[이미지: 대체텍스트]` 자리표시자로 대체함
 
 ## 라이선스
 
