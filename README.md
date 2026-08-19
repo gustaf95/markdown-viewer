@@ -105,6 +105,18 @@ Electron + TypeScript로 구현했으며, 렌더러 프로세스를 샌드박스
 | `\(...\)` 수식 | 편집 모드에서는 일반 텍스트로 표시됨 (원문은 보존, 보기 모드에서는 정상 렌더링). 편집하려면 `$...$` 표기 사용 권장 |
 | HTML 포함 문서 | 원시 HTML 블록은 편집 모드에서 제한적으로 표시될 수 있음 |
 
+### 인쇄·내보내기
+
+- **인쇄** (`Ctrl+P`, 툴바 **🖨 인쇄**): 시스템 인쇄 대화상자로 출력. A4 15mm 여백, 툴바·상태바·복사 버튼 등 화면 전용 UI는 지면에서 제외되고, 화면에서 가로 스크롤로 처리하던 코드·표는 지면 폭에 맞춰 줄바꿈됩니다. 다크 모드로 보고 있어도 지면은 항상 흰 배경으로 출력됩니다.
+- **HTML로 내보내기** (`파일 > 내보내기 > HTML...`, `Ctrl+Shift+H`): 현재 문서를 **단일 HTML 파일**로 저장합니다.
+  - CSS(본문 스타일 · 코드 하이라이팅 · KaTeX)와 **KaTeX 폰트, 로컬 이미지를 모두 파일 안에 인라인 임베드** — 다른 PC로 옮기거나 메일에 첨부해도 브라우저에서 그대로 열립니다 (인터넷 연결 불필요)
+  - 수식이 없는 문서에는 KaTeX 자산을 넣지 않아 파일이 불필요하게 커지지 않음
+  - 배포용이므로 화면 테마와 무관하게 **라이트 테마 고정**, 복사 버튼 등 앱 전용 UI는 제거
+  - 기본 저장 위치는 원본 문서와 같은 폴더, 기본 파일명은 `원본이름.html`
+  - 편집 모드에서 내보내면 **편집 중인 내용** 기준으로 저장됩니다 (인쇄와 동일한 정책)
+
+> DOCX·HWPX 내보내기는 계획 단계입니다. 구현 계획은 [doc/ToDo.md](doc/ToDo.md)를 참고하세요.
+
 ## 키보드 단축키
 
 | 기능 | 단축키 |
@@ -112,6 +124,8 @@ Electron + TypeScript로 구현했으며, 렌더러 프로세스를 샌드박스
 | 파일 열기 | `Ctrl+O` |
 | 편집 모드 전환 | `Ctrl+E` |
 | 저장 | `Ctrl+S` |
+| 인쇄 | `Ctrl+P` |
+| HTML로 내보내기 | `Ctrl+Shift+H` |
 | 새로고침 | `F5` 또는 `Ctrl+R` |
 | 확대 / 축소 / 기본 크기 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (또는 `Ctrl+휠`) |
 | 다크/라이트 모드 전환 | `Ctrl+Shift+T` |
@@ -183,6 +197,26 @@ npx electron . test-docs/mixed.md
 
 추가 확인 항목: 테마/배율이 재시작 후 유지되는지, 외부 링크가 기본 브라우저로 열리는지, 문서를 연 채 외부 편집기로 저장하면 자동 갱신되는지.
 
+### 스모크 테스트 (환경변수)
+
+창을 띄워 문서를 연 뒤 스크린샷을 저장하고 자동 종료합니다. 내보내기는 저장 대화상자를 건너뛰고 지정한 경로에 바로 씁니다.
+
+```bash
+# 문서를 열어 스크린샷 저장
+MDV_SMOKE_FILE=test-docs/mixed.md MDV_SMOKE_OUT=out.png npx electron .
+
+# 여기에 HTML 내보내기까지 수행 (대화상자 없이 지정 경로에 저장)
+MDV_SMOKE_FILE=test-docs/mixed.md MDV_SMOKE_OUT=out.png MDV_SMOKE_EXPORT=out.html npx electron .
+```
+
+| 환경변수 | 용도 |
+|---|---|
+| `MDV_SMOKE_FILE` | 열 문서 경로 (필수) |
+| `MDV_SMOKE_OUT` | 스크린샷 저장 경로 (필수) |
+| `MDV_SMOKE_EXPORT` | HTML 내보내기 결과 경로 (지정 시 저장 대화상자 생략) |
+| `MDV_SMOKE_THEME=dark` | 다크 모드로 전환 후 촬영 |
+| `MDV_SMOKE_EDIT=1` / `MDV_SMOKE_SAVE=1` | 편집 모드 전환 / 저장까지 수행 |
+
 ## Windows exe 패키징
 
 ```bash
@@ -229,10 +263,11 @@ markdown-viewer/
 ├─ src/
 │  ├─ main/
 │  │  ├─ main.ts            # 창 생성, 메뉴, 파일 열기/감시, 인코딩 감지, IPC
+│  │  ├─ export-html.ts     # 단일 파일 HTML 내보내기 (CSS/폰트/이미지 인라인 임베드)
 │  │  └─ preload.ts         # contextBridge로 제한된 API 노출
 │  ├─ renderer/
 │  │  ├─ index.html         # CSP 포함 기본 레이아웃
-│  │  ├─ renderer.ts        # UI 로직 (테마/배율/링크/드롭/복사/편집 모드)
+│  │  ├─ renderer.ts        # UI 로직 (테마/배율/링크/드롭/복사/편집/인쇄/내보내기)
 │  │  ├─ markdown.ts        # markdown-it + KaTeX + highlight.js + DOMPurify
 │  │  ├─ editor.ts          # Milkdown Crepe WYSIWYG 편집기 래퍼
 │  │  └─ styles.css         # 한글 친화 스타일, 라이트/다크 테마
@@ -281,6 +316,7 @@ markdown-viewer/
 - 문서 내 앵커 링크(`#제목`)는 제목에 id가 부여되지 않아 아직 이동하지 않음
 - 편집 모드에서 저장하면 Markdown 서식이 표준형으로 정규화될 수 있음 (내용은 동일)
 - 글자 확대/축소는 보기 모드에만 적용됨
+- HTML 내보내기: 10MB를 넘는 이미지와 외부(`http(s)`) 이미지는 임베드하지 않고 원본 경로를 유지함
 
 ## 라이선스
 

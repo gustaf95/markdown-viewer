@@ -29,7 +29,8 @@ export type AppCommand =
   | 'edit-toggle'
   | 'save'
   | 'save-close'
-  | 'print';
+  | 'print'
+  | 'export-html';
 
 /** 파일 저장 결과 */
 export interface SaveResult {
@@ -45,6 +46,28 @@ export interface PrintResult {
   ok: boolean;
   /** 사용자가 인쇄 대화상자를 취소한 경우 true */
   canceled?: boolean;
+  error?: string;
+}
+
+/** 내보내기 형식 (F-1101~) — HTML 우선 구현, DOCX/HWPX는 추후 확장 */
+export type ExportFormat = 'html';
+
+/** renderer -> main 내보내기 요청 */
+export interface ExportRequest {
+  format: ExportFormat;
+  /** 내보낼 본문 HTML (sanitize된 #content의 innerHTML, 앱 전용 UI 제거 상태) */
+  html: string;
+  /** 문서 제목 (<title>에 사용) */
+  title: string;
+}
+
+/** 내보내기 결과 */
+export interface ExportResult {
+  ok: boolean;
+  /** 사용자가 저장 대화상자를 취소한 경우 true */
+  canceled?: boolean;
+  /** 저장된 파일 경로 */
+  filePath?: string;
   error?: string;
 }
 
@@ -64,6 +87,8 @@ export interface MdvApi {
   saveFile(content: string): Promise<SaveResult>;
   /** 현재 보고 있는 문서를 인쇄 (시스템 인쇄 대화상자 표시) */
   print(): Promise<PrintResult>;
+  /** 현재 문서를 지정한 형식으로 내보내기 (저장 위치는 main의 대화상자에서 선택) */
+  exportDocument(request: ExportRequest): Promise<ExportResult>;
   /** 저장되지 않은 변경 여부를 main에 알림 (닫기 확인 대화상자용) */
   notifyDirty(dirty: boolean): void;
   /** 닫기 전 저장(save-close) 처리 결과 전달: 'close'면 창을 닫고 'cancel'이면 유지 */

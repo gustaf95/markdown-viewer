@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { AppCommand, EncodingChoice, FileErrorPayload, FileOpenedPayload, MdvApi, PrintResult, SaveResult } from '../common/types';
+import type { AppCommand, EncodingChoice, ExportRequest, ExportResult, FileErrorPayload, FileOpenedPayload, MdvApi, PrintResult, SaveResult } from '../common/types';
 
 // contextIsolation: true 환경에서 renderer에 노출하는 유일한 통로.
 // fs 등 Node API는 절대 노출하지 않고, main 프로세스 IPC 래퍼만 제공한다. (NF-204)
@@ -12,6 +12,7 @@ const api: MdvApi = {
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   saveFile: (content: string): Promise<SaveResult> => ipcRenderer.invoke('file:save', content),
   print: (): Promise<PrintResult> => ipcRenderer.invoke('file:print'),
+  exportDocument: (request: ExportRequest): Promise<ExportResult> => ipcRenderer.invoke('file:export', request),
   notifyDirty: (dirty: boolean) => ipcRenderer.send('doc:dirty', dirty),
   resolveClose: (action: 'close' | 'cancel') => ipcRenderer.send('app:resolve-close', action),
   onFileOpened: (cb: (payload: FileOpenedPayload) => void) => {

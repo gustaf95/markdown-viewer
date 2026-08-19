@@ -1,6 +1,6 @@
 import { renderMarkdown } from './markdown';
 import { createEditor, EditorHandle } from './editor';
-import type { EncodingChoice, FileOpenedPayload, MdvApi } from '../common/types';
+import type { EncodingChoice, ExportFormat, FileOpenedPayload, MdvApi } from '../common/types';
 
 declare global {
   interface Window { mdv: MdvApi }
@@ -19,6 +19,7 @@ const emptyState = $('empty-state');
 const recentBox = $('recent-box');
 const recentList = $('recent-list');
 const loading = $('loading');
+const loadingLabel = loading.querySelector('span') as HTMLSpanElement;
 const toast = $('toast');
 const fileNameLabel = $('file-name');
 const zoomLabel = $('zoom-label');
@@ -53,6 +54,8 @@ let draftMarkdown: string | null = null;
 let dirty = false;
 /** 인쇄 대화상자가 열려 있는 동안 중복 요청을 막는다 */
 let printing = false;
+/** 내보내기(저장 대화상자 + 변환)가 진행 중인 동안 중복 요청을 막는다 */
+let exporting = false;
 
 function setDirty(next: boolean): void {
   if (dirty === next) return;
@@ -106,6 +109,15 @@ function applyTheme(next: 'light' | 'dark'): void {
 // ---------------------------------------------------------------------------
 // 토스트/상태 표시
 // ---------------------------------------------------------------------------
+function showLoading(text = '렌더링 중...'): void {
+  loadingLabel.textContent = text;
+  loading.hidden = false;
+}
+
+function hideLoading(): void {
+  loading.hidden = true;
+}
+
 let toastTimer: number | undefined;
 function showToast(message: string, ms = 2600): void {
   toast.textContent = message;
@@ -247,10 +259,53 @@ async function printDocument(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 내보내기 (F-1101)
+//  - 인쇄와 동일한 정책: 편집 중이면 편집 중인 내용을 기준으로 내보낸다
+//  - 실제 파일 생성은 main이 담당한다 (renderer는 sandbox라 파일을 쓸 수 없다)
+// ---------------------------------------------------------------------------
+/** 내보낼 본문 HTML — 앱 전용 UI(복사 버튼)를 제거한 사본에서 뽑는다 */
+function buildExportBody(): string {
+  const clone = content.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('.copy-btn').forEach((btn) => btn.remove());
+  return clone.innerHTML;
+}
+
+/** 문서 제목: 첫 h1이 있으면 그것을, 없으면 확장자를 뗀 파일명을 쓴다 */
+function documentTitle(): string {
+  const heading = content.querySelector('h1')?.textContent?.trim();
+  if (heading) return heading;
+  const fileName = currentFile?.fileName ?? 'document';
+  return fileName.replace(/\.(md|markdown|txt)$/i, '');
+}
+
+async function exportDocument(format: ExportFormat): Promise<void> {
+  if (!currentFile) {
+    showToast('내보낼 문서가 없습니다. 먼저 파일을 여세요.');
+    return;
+  }
+  if (exporting) return; // 저장 대화상자가 이미 떠 있음
+  exporting = true;
+  showLoading('내보내는 중...');
+  try {
+    if (editMode && editorHandle) {
+      draftMarkdown = editorHandle.getMarkdown();
+      renderIntoContent(draftMarkdown, currentFile.dirUrl);
+    }
+    await waitForImages(content); // 아직 로드되지 않은 이미지는 임베드되지 않으므로 기다린다
+    const result = await mdv.exportDocument({ format, html: buildExportBody(), title: documentTitle() });
+    if (result.ok) showToast(`내보냈습니다: ${result.filePath}`, 4000);
+    else if (!result.canceled) showToast(result.error ?? '내보내기에 실패했습니다.', 5000);
+  } finally {
+    hideLoading();
+    exporting = false;
+  }
+}
+
 function renderDocument(payload: FileOpenedPayload, opts?: { keepDraft?: boolean }): void {
   currentFile = payload;
   if (!opts?.keepDraft) draftMarkdown = null;
-  loading.hidden = false; // 렌더링 중 표시 (NF-003)
+  showLoading(); // 렌더링 중 표시 (NF-003)
 
   // 로딩 오버레이가 화면에 그려진 뒤 파싱 시작 (큰 문서 대비)
   window.setTimeout(() => {
@@ -261,7 +316,7 @@ function renderDocument(payload: FileOpenedPayload, opts?: { keepDraft?: boolean
 
     emptyState.hidden = true;
     content.hidden = false;
-    loading.hidden = true;
+    hideLoading();
 
     updateTitle();
     fileNameLabel.title = payload.filePath;
@@ -407,7 +462,7 @@ mdv.onFileOpened((payload) => {
 });
 
 mdv.onFileError(({ message }) => {
-  loading.hidden = true;
+  hideLoading();
   showToast(message, 5000);
 });
 
@@ -420,6 +475,7 @@ mdv.onCommand((cmd) => {
     case 'edit-toggle': void toggleEditMode(); break;
     case 'save': void saveDocument(); break;
     case 'print': void printDocument(); break;
+    case 'export-html': void exportDocument('html'); break;
     case 'save-close':
       void saveDocument().then((ok) => mdv.resolveClose(ok ? 'close' : 'cancel'));
       break;

@@ -1,6 +1,6 @@
 # Markdown Viewer — 구현 예정 목록 (ToDo)
 
-- 작성일: 2026-08-20
+- 작성일: 2026-08-20 (최종 갱신: 2026-08-20, HTML 내보내기 구현 완료)
 - 대상 버전: v0.1.0 이후
 - 이 문서는 **구현 계획만** 정리한다. 실제 코드 반영은 각 항목을 착수할 때 진행한다.
 - 요구사항 원문은 [doc/README.md](README.md) 참고.
@@ -9,15 +9,16 @@
 
 ## 1. 우선순위 요약
 
-| 순위 | 항목 | 난이도 | 외부 의존성 | 비고 |
+| 순위 | 항목 | 난이도 | 외부 의존성 | 상태 |
 |---|---|:---:|---|---|
-| 1 | HTML 내보내기 | 낮음 | 없음 | 이미 렌더링된 DOM 재사용 가능 |
-| 2 | DOCX 내보내기 | 중간 | npm 라이브러리 | 수식 변환이 핵심 난제 |
-| 3 | HWPX 내보내기 | 높음 | 없음(직접 생성) | 표준 스펙 기반 직접 구현 필요 |
-| 4 | 내보내기 공통 UI/메뉴 | 낮음 | 없음 | 1번과 함께 착수 |
+| 1 | HTML 내보내기 | 낮음 | 없음 | **구현 완료** |
+| 2 | DOCX 내보내기 | 중간 | npm 라이브러리 | 계획 (수식 변환이 핵심 난제) |
+| 3 | HWPX 내보내기 | 높음 | 없음(직접 생성) | 계획 (표준 스펙 기반 직접 구현) |
+| 4 | 내보내기 공통 UI/메뉴 | 낮음 | 없음 | **구현 완료** (1번과 함께) |
 
 > 권장 진행 순서: **공통 골격 + HTML → DOCX → HWPX**.
-> HTML 경로를 먼저 완성해두면 DOCX/HWPX 모두 "정제된 HTML"을 입력으로 재사용할 수 있다.
+> HTML 경로가 완성되었으므로 DOCX/HWPX는 이 결과("정제된 HTML")를 입력으로 재사용할 수 있다.
+> 다음 착수 대상은 **DOCX 내보내기**다.
 
 ---
 
@@ -35,15 +36,16 @@
  ├─ 편집 모드 전환         Ctrl+E
  ├─ 저장                   Ctrl+S
  ├─ 인쇄...                Ctrl+P      (구현 완료)
- ├─ 내보내기               ▶ HTML...   Ctrl+Shift+H
- │                          DOCX...    Ctrl+Shift+D
- │                          HWPX...    Ctrl+Shift+W
+ ├─ 내보내기               ▶ HTML...   Ctrl+Shift+H   (구현 완료)
+ │                          DOCX...    Ctrl+Shift+D   (예정)
+ │                          HWPX...    Ctrl+Shift+W   (예정)
  └─ 종료                   Ctrl+Q
 ```
 
-- 툴바에도 `📤 내보내기` 드롭다운 버튼 추가 검토.
-- 문서가 열려 있지 않으면 메뉴 항목 비활성화.
-- 편집 모드에서 내보내면 **편집 중인 내용**을 기준으로 한다 (인쇄와 동일한 정책).
+- [ ] 툴바에도 `📤 내보내기` 드롭다운 버튼 추가 검토 (현재는 메뉴/단축키만 제공).
+- [x] 문서가 열려 있지 않으면 메뉴 항목 비활성화 — `rebuildMenu()`에서 `enabled: currentFilePath !== null`.
+- [x] 편집 모드에서 내보내면 **편집 중인 내용**을 기준으로 한다 (인쇄와 동일한 정책).
+- 형식이 늘어나면 `AppCommand`에 `export-<format>`을 추가하고 `ExportRequest.format`만 확장하면 된다.
 
 **처리 흐름**
 
@@ -55,26 +57,38 @@
 
 **공통 고려사항**
 
-- [ ] 변환은 main 프로세스에서 수행 (renderer는 sandbox이므로 파일 쓰기 불가)
-- [ ] 대용량 문서 변환 중 진행 표시(로딩 오버레이 재사용)
-- [ ] 변환 실패 시 부분 파일이 남지 않도록 임시 파일 → rename 방식
-- [ ] 내보내기 기본 폴더는 원본 문서와 같은 폴더
-- [ ] 이미지 경로 해석은 기존 `resolveResourceUrl` 규칙과 동일하게 유지
+- [x] 변환은 main 프로세스에서 수행 (renderer는 sandbox이므로 파일 쓰기 불가)
+- [x] 대용량 문서 변환 중 진행 표시(로딩 오버레이 재사용) — `showLoading('내보내는 중...')`
+- [x] 변환 실패 시 부분 파일이 남지 않도록 임시 파일 → rename 방식 — `writeFileAtomic()`
+- [x] 내보내기 기본 폴더는 원본 문서와 같은 폴더
+- [x] 이미지 경로 해석은 기존 `resolveResourceUrl` 규칙과 동일하게 유지 (renderer가 해석한 결과를 그대로 사용)
 
-### 2.2 HTML 내보내기
+### 2.2 HTML 내보내기 — **구현 완료**
 
-가장 먼저 착수. 이미 `renderMarkdown()`이 만든 sanitize된 DOM이 있으므로 재사용한다.
+`renderMarkdown()`이 만든 sanitize된 DOM을 그대로 재사용한다. 구현: [src/main/export-html.ts](../src/main/export-html.ts).
 
-- [ ] 단일 파일(self-contained) 출력: CSS 인라인 + 이미지 base64 임베드
-- [ ] KaTeX CSS/폰트 임베드 (오프라인 열람 보장, 요구사항 F-306과 동일 기조)
-- [ ] highlight.js 테마 CSS 인라인
-- [ ] 복사 버튼(`.copy-btn`) 등 앱 전용 UI 제거
-- [ ] 라이트 테마 고정 (인쇄와 동일하게 배포용은 흰 배경)
-- [ ] 옵션: "이미지 임베드" vs "이미지 폴더 분리(`문서명_files/`)" 선택
+- [x] 단일 파일(self-contained) 출력: CSS 인라인 + 이미지 base64 임베드
+- [x] KaTeX CSS/폰트 임베드 (오프라인 열람 보장, 요구사항 F-306과 동일 기조)
+- [x] highlight.js 테마 CSS 인라인 (라이트 테마)
+- [x] 복사 버튼(`.copy-btn`) 등 앱 전용 UI 제거
+- [x] 라이트 테마 고정 (인쇄와 동일하게 배포용은 흰 배경)
+- [ ] 옵션: "이미지 임베드" vs "이미지 폴더 분리(`문서명_files/`)" 선택 — 현재는 임베드만 지원
 
-**검토 사항**
+**결정된 사항**
 
-- 폰트까지 임베드하면 파일이 수 MB 단위로 커진다 → KaTeX 폰트는 사용된 것만 서브셋할지 결정 필요.
+- 폰트 크기 문제는 **woff2만 임베드**하는 것으로 해결했다. 브라우저는 지원하는 첫 포맷만 내려받으므로
+  woff/ttf 폴백은 임베드하지 않아도 되고, KaTeX woff2 전체가 약 300KB라 서브셋까지는 불필요했다.
+- **수식이 없는 문서에는 KaTeX CSS/폰트를 아예 넣지 않는다** (`katex` 클래스 존재 여부로 판단).
+  실측: 수식 포함 문서 약 400KB, 수식 없는 문서 약 13KB.
+- 10MB를 넘는 이미지와 외부(`http(s)`) 이미지는 임베드하지 않고 원본 경로를 유지한다.
+  읽지 못한 이미지도 마찬가지(같은 PC에서는 그대로 보인다).
+- 문서 제목(`<title>`)은 첫 `h1`, 없으면 확장자를 뗀 파일명을 사용한다.
+
+**검증**
+
+- `buildExportedHtml()` 단위 확인: 이미지 data URI 치환 / 없는 이미지·원격 이미지 경로 유지 / 폰트 인라인 / 제목 이스케이프
+- 스모크 테스트(`MDV_SMOKE_EXPORT=<경로>`)로 앱을 실제 실행해 `test-docs/mixed.md`를 내보낸 뒤,
+  결과 HTML을 다시 열어 수식·코드 강조·표·임베드 이미지가 모두 정상 표시되는 것을 확인했다.
 
 ### 2.3 DOCX 내보내기
 
@@ -145,12 +159,18 @@
 
 ## 4. 참고: 이미 구현된 관련 기능
 
-인쇄 기능은 구현 완료되었으며, 내보내기 구현 시 아래 코드를 재사용할 수 있다.
+인쇄와 HTML 내보내기는 구현 완료되었으며, DOCX/HWPX 구현 시 아래 코드를 재사용할 수 있다.
 
 | 재사용 대상 | 위치 | 용도 |
 |---|---|---|
 | `renderIntoContent()` | `src/renderer/renderer.ts` | Markdown → 보기용 DOM 렌더링 |
 | `waitForImages()` | `src/renderer/renderer.ts` | 이미지 로드 완료 대기 |
 | `applyThemeStyles()` | `src/renderer/renderer.ts` | 출력용 라이트 테마 임시 전환 |
+| `buildExportBody()` | `src/renderer/renderer.ts` | 앱 UI를 제거한 본문 HTML 추출 — 모든 포맷의 공통 입력 |
+| `exportDocument()` | `src/renderer/renderer.ts` | 편집본 반영 → 이미지 대기 → main 호출 → 토스트 (포맷 인자만 다름) |
 | `@media print` 규칙 | `src/renderer/styles.css` | 코드/표 줄바꿈, 앱 UI 제거 규칙 |
-| `file:print` IPC 패턴 | `src/main/main.ts` | main에서 처리 후 결과 객체 반환하는 구조 |
+| `file:export` IPC | `src/main/main.ts` | 저장 대화상자 + 포맷 분기 지점 (여기에 DOCX/HWPX 추가) |
+| `writeFileAtomic()` | `src/main/main.ts` | 임시 파일 → rename 방식의 안전한 파일 쓰기 |
+| `buildExportedHtml()` | `src/main/export-html.ts` | 정제된 HTML 생성 — DOCX/HWPX의 입력으로 재사용 가능 |
+| `embedLocalImages()` | `src/main/export-html.ts` | `file://` 이미지 → data URI (이미지 바이너리 확보 경로) |
+| `MDV_SMOKE_EXPORT` | `src/main/main.ts` | 저장 대화상자 없이 내보내기까지 수행하는 스모크 테스트 훅 |

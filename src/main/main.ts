@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import * as iconv from 'iconv-lite';
-import { AppCommand, EncodingChoice, FileOpenedPayload, PrintResult, SaveResult } from '../common/types';
+import { AppCommand, EncodingChoice, ExportRequest, ExportResult, FileOpenedPayload, PrintResult, SaveResult } from '../common/types';
+import { buildExportedHtml } from './export-html';
 
 const SUPPORTED_EXTENSIONS = ['.md', '.markdown', '.txt'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -22,6 +23,8 @@ let docDirty = false;
 let forceClose = false;
 /** 자기 자신의 저장으로 인한 파일 변경을 감시에서 무시하기 위한 타임스탬프 */
 let lastSelfSaveAt = 0;
+/** 스모크 테스트에서 저장 대화상자 없이 내보낼 경로 (없으면 평소처럼 대화상자를 띄운다) */
+const smokeExportPath = process.env.MDV_SMOKE_EXPORT ?? null;
 
 // ---------------------------------------------------------------------------
 // 인코딩 처리 (F-006, F-205): BOM -> UTF-16 -> 엄격한 UTF-8 -> CP949 순으로 판별
@@ -64,6 +67,21 @@ function encodeText(text: string, encoding: string): Buffer {
       return iconv.encode(text, encoding, { addBOM: true });
     default:
       return Buffer.from(text, 'utf8');
+  }
+}
+
+/**
+ * 임시 파일에 먼저 쓴 뒤 교체한다 (F-1101).
+ * 변환 도중 실패해도 반쪽짜리 결과물이 사용자의 파일을 덮어쓰지 않도록.
+ */
+async function writeFileAtomic(filePath: string, data: Buffer): Promise<void> {
+  const tmpPath = `${filePath}.${process.pid}.tmp`;
+  try {
+    await fs.promises.writeFile(tmpPath, data);
+    await fs.promises.rename(tmpPath, filePath); // Windows에서도 기존 파일을 덮어쓴다
+  } catch (err) {
+    await fs.promises.rm(tmpPath, { force: true }).catch(() => undefined);
+    throw err;
   }
 }
 
@@ -210,6 +228,17 @@ function rebuildMenu(): void {
         { label: '저장', accelerator: 'CmdOrCtrl+S', click: () => sendCommand('save') },
         { type: 'separator' },
         { label: '인쇄...', accelerator: 'CmdOrCtrl+P', click: () => sendCommand('print') },
+        {
+          label: '내보내기',
+          submenu: [
+            {
+              label: 'HTML...',
+              accelerator: 'CmdOrCtrl+Shift+H',
+              enabled: currentFilePath !== null, // 문서가 없으면 비활성화
+              click: () => sendCommand('export-html'),
+            },
+          ],
+        },
         { type: 'separator' },
         { label: '종료', accelerator: 'CmdOrCtrl+Q', role: 'quit' },
       ],
@@ -345,6 +374,10 @@ function setupSmokeTestIfRequested(): void {
     setTimeout(() => sendCommand('theme-toggle'), 1200);
   }
   let captureDelay = 3000;
+  if (smokeExportPath) {
+    setTimeout(() => sendCommand('export-html'), 2000);
+    captureDelay = 4500;
+  }
   if (process.env.MDV_SMOKE_EDIT === '1') {
     setTimeout(() => sendCommand('edit-toggle'), 1500);
     captureDelay = 4500;
@@ -430,6 +463,39 @@ function registerIpc(): void {
       // 사용 가능한 프린터가 없으면 print()가 즉시 예외를 던진다
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: `인쇄를 시작할 수 없습니다: ${msg}` };
+    }
+  });
+  // 내보내기 (F-1101): 렌더러가 보기용 DOM에서 뽑은 본문 HTML을 단일 파일 문서로 저장한다.
+  ipcMain.handle('file:export', async (_e, request: unknown): Promise<ExportResult> => {
+    const win = mainWindow;
+    if (!win) return { ok: false, error: '내보낼 창을 찾을 수 없습니다.' };
+    const req = request as Partial<ExportRequest> | null;
+    if (!req || req.format !== 'html' || typeof req.html !== 'string') {
+      return { ok: false, error: '잘못된 내보내기 요청입니다.' };
+    }
+    if (!currentFilePath) return { ok: false, error: '열려 있는 파일이 없습니다.' };
+
+    const baseName = path.basename(currentFilePath, path.extname(currentFilePath));
+    let targetPath = smokeExportPath;
+    if (!targetPath) {
+      const result = await dialog.showSaveDialog(win, {
+        title: 'HTML로 내보내기',
+        // 기본 저장 위치는 원본 문서와 같은 폴더
+        defaultPath: path.join(path.dirname(currentFilePath), `${baseName}.html`),
+        filters: [{ name: 'HTML 문서', extensions: ['html'] }],
+      });
+      if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+      targetPath = result.filePath;
+    }
+
+    try {
+      const title = typeof req.title === 'string' && req.title.trim() ? req.title.trim() : baseName;
+      const html = buildExportedHtml(req.html, title);
+      await writeFileAtomic(targetPath, Buffer.from(html, 'utf8'));
+      return { ok: true, filePath: targetPath };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `내보내기에 실패했습니다: ${msg}` };
     }
   });
   ipcMain.on('doc:dirty', (_e, dirty: unknown) => {
