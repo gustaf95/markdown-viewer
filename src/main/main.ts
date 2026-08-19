@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import * as iconv from 'iconv-lite';
-import { AppCommand, EncodingChoice, FileOpenedPayload, SaveResult } from '../common/types';
+import { AppCommand, EncodingChoice, FileOpenedPayload, PrintResult, SaveResult } from '../common/types';
 
 const SUPPORTED_EXTENSIONS = ['.md', '.markdown', '.txt'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -209,6 +209,8 @@ function rebuildMenu(): void {
         { label: '편집 모드 전환', accelerator: 'CmdOrCtrl+E', click: () => sendCommand('edit-toggle') },
         { label: '저장', accelerator: 'CmdOrCtrl+S', click: () => sendCommand('save') },
         { type: 'separator' },
+        { label: '인쇄...', accelerator: 'CmdOrCtrl+P', click: () => sendCommand('print') },
+        { type: 'separator' },
         { label: '종료', accelerator: 'CmdOrCtrl+Q', role: 'quit' },
       ],
     },
@@ -405,6 +407,29 @@ function registerIpc(): void {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: `저장에 실패했습니다: ${msg}` };
+    }
+  });
+  // 인쇄 (F-1001): 렌더러가 인쇄용 DOM을 준비한 뒤 호출한다.
+  // 실제 페이지 구성은 styles.css의 @media print 규칙이 담당한다.
+  ipcMain.handle('file:print', async (): Promise<PrintResult> => {
+    const win = mainWindow;
+    if (!win) return { ok: false, error: '인쇄할 창을 찾을 수 없습니다.' };
+    try {
+      return await new Promise<PrintResult>((resolve) => {
+        win.webContents.print(
+          { silent: false, printBackground: true, color: true },
+          (success, failureReason) => {
+            if (success) return resolve({ ok: true });
+            // 사용자가 대화상자를 닫은 경우는 오류가 아니다
+            if (/cancel/i.test(failureReason ?? '')) return resolve({ ok: false, canceled: true });
+            resolve({ ok: false, error: failureReason || '인쇄에 실패했습니다.' });
+          },
+        );
+      });
+    } catch (err) {
+      // 사용 가능한 프린터가 없으면 print()가 즉시 예외를 던진다
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `인쇄를 시작할 수 없습니다: ${msg}` };
     }
   });
   ipcMain.on('doc:dirty', (_e, dirty: unknown) => {

@@ -30,6 +30,7 @@ const themeButton = $('btn-theme');
 const editorEl = $('editor');
 const editButton = $('btn-edit');
 const saveButton = $('btn-save');
+const printButton = $('btn-print');
 
 // ---------------------------------------------------------------------------
 // 설정 저장 (F-804): 테마/배율은 localStorage에 유지
@@ -50,6 +51,8 @@ let editorHandle: EditorHandle | null = null;
 /** 편집 모드에서 보기 모드로 돌아왔을 때 아직 저장하지 않은 편집본 */
 let draftMarkdown: string | null = null;
 let dirty = false;
+/** 인쇄 대화상자가 열려 있는 동안 중복 요청을 막는다 */
+let printing = false;
 
 function setDirty(next: boolean): void {
   if (dirty === next) return;
@@ -77,17 +80,25 @@ function applyZoom(next: number): void {
   localStorage.setItem('mdv.zoom', String(zoom));
 }
 
-function applyTheme(next: 'light' | 'dark'): void {
-  theme = next;
-  document.body.dataset.theme = theme;
+/**
+ * 테마별 스타일시트를 화면에 적용 (설정 저장 없음).
+ * 인쇄할 때 다크 테마를 잠시 라이트로 되돌리는 데도 재사용한다.
+ */
+function applyThemeStyles(t: 'light' | 'dark'): void {
+  document.body.dataset.theme = t;
   const lightCss = document.getElementById('hljs-light') as HTMLLinkElement;
   const darkCss = document.getElementById('hljs-dark') as HTMLLinkElement;
-  lightCss.disabled = theme === 'dark';
-  darkCss.disabled = theme === 'light';
+  lightCss.disabled = t === 'dark';
+  darkCss.disabled = t === 'light';
   const mdLight = document.getElementById('milkdown-light') as HTMLLinkElement;
   const mdDark = document.getElementById('milkdown-dark') as HTMLLinkElement;
-  mdLight.disabled = theme === 'dark';
-  mdDark.disabled = theme === 'light';
+  mdLight.disabled = t === 'dark';
+  mdDark.disabled = t === 'light';
+}
+
+function applyTheme(next: 'light' | 'dark'): void {
+  theme = next;
+  applyThemeStyles(theme);
   themeButton.textContent = theme === 'light' ? '🌙 다크' : '☀️ 라이트';
   localStorage.setItem('mdv.theme', theme);
 }
@@ -177,6 +188,65 @@ async function saveDocument(): Promise<boolean> {
   return false;
 }
 
+/** Markdown 원문을 보기용 DOM(#content)에 렌더링 (렌더링/인쇄에서 공용) */
+function renderIntoContent(markdown: string, dirUrl: string): void {
+  try {
+    const { fragment } = renderMarkdown(markdown, dirUrl);
+    content.replaceChildren(fragment);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    content.textContent = `문서를 표시하는 중 오류가 발생했습니다: ${msg}`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 인쇄
+//  - 지면 구성(툴바 숨김/흰 배경/페이지 나눔)은 styles.css의 @media print 담당
+//  - 편집 중에도 화면에 보이는 내용 그대로 인쇄되도록 편집본을 보기용 DOM에 반영
+// ---------------------------------------------------------------------------
+/** 인쇄 전 이미지 로드 대기 — 아직 로드 중인 이미지는 빈 자리로 인쇄되므로 */
+function waitForImages(root: HTMLElement, timeoutMs = 3000): Promise<void> {
+  const pending = Array.from(root.querySelectorAll('img')).filter((img) => !img.complete);
+  if (pending.length === 0) return Promise.resolve();
+  const loaded = Promise.all(
+    pending.map(
+      (img) =>
+        new Promise<void>((resolve) => {
+          img.addEventListener('load', () => resolve(), { once: true });
+          img.addEventListener('error', () => resolve(), { once: true }); // 실패한 이미지도 더 기다리지 않는다
+        }),
+    ),
+  ).then(() => undefined);
+  // 네트워크 이미지 등으로 무한정 대기하지 않도록 타임아웃
+  return Promise.race([loaded, new Promise<void>((resolve) => window.setTimeout(resolve, timeoutMs))]);
+}
+
+async function printDocument(): Promise<void> {
+  if (!currentFile) {
+    showToast('인쇄할 문서가 없습니다. 먼저 파일을 여세요.');
+    return;
+  }
+  if (printing) return; // 인쇄 대화상자가 이미 떠 있음
+  printing = true;
+  // 다크 테마의 코드 하이라이팅은 흰 지면에서 대비가 낮아 읽기 어려우므로
+  // 인쇄하는 동안만 라이트 스타일시트로 바꿨다가 되돌린다 (설정은 유지)
+  const wasDark = theme === 'dark';
+  try {
+    if (editMode && editorHandle) {
+      draftMarkdown = editorHandle.getMarkdown();
+      renderIntoContent(draftMarkdown, currentFile.dirUrl);
+    }
+    if (wasDark) applyThemeStyles('light');
+    await waitForImages(content);
+    const result = await mdv.print();
+    if (result.ok) showToast('인쇄를 시작했습니다.');
+    else if (!result.canceled) showToast(result.error ?? '인쇄에 실패했습니다.', 5000);
+  } finally {
+    if (wasDark) applyThemeStyles('dark');
+    printing = false;
+  }
+}
+
 function renderDocument(payload: FileOpenedPayload, opts?: { keepDraft?: boolean }): void {
   currentFile = payload;
   if (!opts?.keepDraft) draftMarkdown = null;
@@ -187,13 +257,7 @@ function renderDocument(payload: FileOpenedPayload, opts?: { keepDraft?: boolean
     const keepScroll = payload.reason !== 'open';
     const prevScrollTop = viewport.scrollTop;
 
-    try {
-      const { fragment } = renderMarkdown(payload.content, payload.dirUrl);
-      content.replaceChildren(fragment);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      content.textContent = `문서를 표시하는 중 오류가 발생했습니다: ${msg}`;
-    }
+    renderIntoContent(payload.content, payload.dirUrl);
 
     emptyState.hidden = true;
     content.hidden = false;
@@ -237,6 +301,7 @@ $('btn-open').addEventListener('click', () => void mdv.openFileDialog());
 $('btn-refresh').addEventListener('click', () => void mdv.reload());
 editButton.addEventListener('click', () => void toggleEditMode());
 saveButton.addEventListener('click', () => void saveDocument());
+printButton.addEventListener('click', () => void printDocument());
 $('btn-zoom-in').addEventListener('click', () => applyZoom(zoom + ZOOM_STEP));
 $('btn-zoom-out').addEventListener('click', () => applyZoom(zoom - ZOOM_STEP));
 themeButton.addEventListener('click', () => applyTheme(theme === 'light' ? 'dark' : 'light'));
@@ -354,6 +419,7 @@ mdv.onCommand((cmd) => {
     case 'theme-toggle': applyTheme(theme === 'light' ? 'dark' : 'light'); break;
     case 'edit-toggle': void toggleEditMode(); break;
     case 'save': void saveDocument(); break;
+    case 'print': void printDocument(); break;
     case 'save-close':
       void saveDocument().then((ok) => mdv.resolveClose(ok ? 'close' : 'cancel'));
       break;

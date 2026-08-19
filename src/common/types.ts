@@ -28,7 +28,8 @@ export type AppCommand =
   | 'theme-toggle'
   | 'edit-toggle'
   | 'save'
-  | 'save-close';
+  | 'save-close'
+  | 'print';
 
 /** 파일 저장 결과 */
 export interface SaveResult {
@@ -37,6 +38,14 @@ export interface SaveResult {
   savedAt?: number;
   /** 저장에 사용된 인코딩 */
   encoding?: string;
+}
+
+/** 인쇄 결과 */
+export interface PrintResult {
+  ok: boolean;
+  /** 사용자가 인쇄 대화상자를 취소한 경우 true */
+  canceled?: boolean;
+  error?: string;
 }
 
 /** 인코딩 강제 지정 값 ('auto'면 자동 감지) */
@@ -53,6 +62,8 @@ export interface MdvApi {
   getPathForFile(file: File): string;
   /** 편집 내용을 현재 파일에 원래 인코딩 그대로 저장 */
   saveFile(content: string): Promise<SaveResult>;
+  /** 현재 보고 있는 문서를 인쇄 (시스템 인쇄 대화상자 표시) */
+  print(): Promise<PrintResult>;
   /** 저장되지 않은 변경 여부를 main에 알림 (닫기 확인 대화상자용) */
   notifyDirty(dirty: boolean): void;
   /** 닫기 전 저장(save-close) 처리 결과 전달: 'close'면 창을 닫고 'cancel'이면 유지 */
