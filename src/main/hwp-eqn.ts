@@ -5,8 +5,13 @@ import type { MathNode } from '../common/docmodel';
 //  - KaTeX가 만든 MathML을 한글의 네이티브 수식 개체 스크립트로 바꾼다.
 //    HWPX에서는 이 문자열이 <hp:equation><hp:script>에 그대로 들어가고,
 //    한글이 열 때 직접 조판하므로 이미지와 달리 확대해도 깨지지 않고 편집도 된다.
+//  - **범위는 언제나 중괄호로 명시한다.** 한글 수식은 공백만으로 묶이는 범위가 모호해서,
+//    `a over b c`처럼 두면 사람도 한글도 어디까지가 분모인지 알 수 없다.
+//    첨자 인자, 분자/분모, 큰 연산자의 피연산자를 모두 `{...}`로 감싼다.
+//        int_{0}^{T_{s}} {phi_{1}(t) phi_{2}(t)~dt} =0
 //  - 문법은 한글 2020으로 실제 조판해 보며 확인했다. 확인된 사실 몇 가지:
-//      * 유니코드 기호(α ∑ ∫ ≤ × → ...)는 그대로 써도 인식된다. 이름표를 따로 두지 않는다.
+//      * 유니코드 기호(≤ × → ∂ 등)도 인식되지만, 이름이 있는 것은 이름을 쓴다.
+//        편집기에서 열었을 때 알아보기 쉽고, 글꼴이 없는 환경에서도 안전하다.
 //      * `pm`/`mp`는 인식되지 않는다. ±는 유니코드나 `+-`를 써야 한다.
 //      * `#`는 어디서나 줄바꿈이므로 본문 문자로 쓰려면 반드시 escape 한다.
 //      * `^`와 `_`는 backslash로 escape 되지 않는다. 따옴표 문자열로 감싸야 한다.
@@ -37,8 +42,8 @@ const ACCENTS: Record<string, string> = {
 const BAR_CHARS = new Set(['¯', '‾', '̄', '_', '̲', '―', '__']);
 
 /**
- * 큰 연산자는 유니코드 기호를 그대로 쓰면 한계값이 옆에 붙어 버린다.
- * 이름표로 바꿔야 한글이 기호 위아래에 놓는다 (∑, ∏ 등).
+ * 큰 연산자. 유니코드 기호를 그대로 두면 한계값이 기호 옆에 붙어 버리고,
+ * 이름표로 써야 한글이 위아래(∑) 또는 오른쪽 위아래(∫)에 제대로 놓는다.
  */
 const BIG_OPERATORS: Record<string, string> = {
   '∑': 'sum',
@@ -53,6 +58,42 @@ const BIG_OPERATORS: Record<string, string> = {
   '∯': 'odint',
   '∰': 'otint',
 };
+
+/**
+ * 유니코드 기호 -> 한글 수식 이름표.
+ * 여기 없는 기호는 유니코드 그대로 내보낸다 (그래도 조판된다).
+ * 이름을 잘못 적으면 그 글자들이 변수로 찍혀 버리므로, 실제로 조판해 확인한 것만 넣는다.
+ */
+const SYMBOL_NAMES: Record<string, string> = {
+  ...BIG_OPERATORS,
+  // 그리스 소문자 (KaTeX가 내보내는 코드포인트 기준)
+  'α': 'alpha', 'β': 'beta', 'γ': 'gamma', 'δ': 'delta',
+  'ϵ': 'epsilon', 'ε': 'varepsilon', 'ζ': 'zeta', 'η': 'eta',
+  'θ': 'theta', 'ι': 'iota', 'κ': 'kappa', 'λ': 'lambda',
+  'μ': 'mu', 'ν': 'nu', 'ξ': 'xi', 'π': 'pi',
+  'ρ': 'rho', 'σ': 'sigma', 'τ': 'tau', 'υ': 'upsilon',
+  'ϕ': 'phi', 'φ': 'varphi', 'χ': 'chi', 'ψ': 'psi', 'ω': 'omega',
+  // 그리스 대문자
+  'Γ': 'GAMMA', 'Δ': 'DELTA', 'Θ': 'THETA', 'Λ': 'LAMBDA',
+  'Ξ': 'XI', 'Π': 'PI', 'Σ': 'SIGMA', 'Υ': 'UPSILON',
+  'Φ': 'PHI', 'Ψ': 'PSI', 'Ω': 'OMEGA',
+  // 연산자·관계
+  '×': 'times', '÷': 'div', '∞': 'infinity', '∂': 'partial', '∇': 'nabla',
+  '≤': 'leq', '≥': 'geq', '≠': 'neq', '≈': 'approx', '≡': 'equiv',
+  '∈': 'in', '∉': 'notin', '⊂': 'subset', '⊃': 'supset',
+  '∩': 'cap', '∪': 'cup',
+  // 양방향 화살표는 이름표가 한글에서 한쪽 화살표로 잘못 조판돼 유니코드 그대로 둔다
+  '→': 'rightarrow', '←': 'leftarrow', '⇒': 'Rightarrow', '⇐': 'Leftarrow',
+  '↦': 'mapsto',
+  '⋯': 'cdots', '…': 'ldots', '⋮': 'vdots', '⋱': 'ddots', '∠': 'angle',
+  '±': '+-', '∓': '-+',
+};
+
+/** 큰 연산자의 피연산자를 어디까지 묶을지 — 관계 기호를 만나면 끊는다 */
+const RELATIONS = new Set([
+  '=', '≠', '≤', '≥', '<', '>', '≈', '≡', '∼', '≅',
+  '→', '⇒', '↔', '⇔', '∈', '∉', '⊂', '⊃', '⊆', '⊇', ':=',
+]);
 
 /** 한글이 정자체 + 앞뒤 여백까지 챙겨 주는 함수 이름들 */
 const FUNCTIONS = new Set([
@@ -69,16 +110,20 @@ const FUNCTIONS = new Set([
 const BACKSLASH_ESCAPE = /[{}&#\\]/;
 const QUOTE_ONLY = /[\^_~`"]/;
 
-/** 기호/변수 한 덩어리를 스크립트 문자로 (특수문자는 escape) */
-function escapeAtom(text: string): string {
+/** 기호/변수 한 덩어리를 스크립트 문자로 (이름표 치환 + 특수문자 escape) */
+function atom(text: string): string {
+  const named = SYMBOL_NAMES[text];
+  if (named) return named;
   let out = '';
   for (const ch of text) {
-    if (ch === '"') out += '″'; // 따옴표는 문자열 안에 넣을 수 없어 비슷한 모양으로
+    const name = SYMBOL_NAMES[ch];
+    if (name) out += ` ${name} `;
+    else if (ch === '"') out += '″'; // 따옴표는 문자열 안에 넣을 수 없어 비슷한 모양으로
     else if (QUOTE_ONLY.test(ch)) out += `"${ch}"`;
     else if (BACKSLASH_ESCAPE.test(ch)) out += `\\${ch}`;
     else out += ch;
   }
-  return out;
+  return out.replace(/\s+/g, ' ').trim();
 }
 
 /** 공백과 특수문자를 그대로 살려야 하는 글(\text{...}) — 따옴표 문자열로 */
@@ -102,14 +147,40 @@ function isWrapped(s: string): boolean {
   return false;
 }
 
-/** 여러 토큰으로 된 식은 중괄호로 묶어야 over/^/_ 가 통째로 걸린다 */
-function group(script: string): string {
+/** 범위를 확실히 하려고 언제나 중괄호로 감싼다 (첨자 인자, 분자/분모 등) */
+function braced(script: string): string {
   const s = script.trim();
   if (s.length === 0) return '{}';
-  // 이미 한 덩어리면 그대로 (lim, sin 같은 함수 이름이 중괄호에 갇히지 않게)
+  return isWrapped(s) ? s : `{${s}}`;
+}
+
+/** 첨자가 붙는 밑동. 한 덩어리면 그대로 둔다 (`lim`, `sin`이 중괄호에 갇히지 않게) */
+function base(script: string): string {
+  const s = script.trim();
+  if (s.length === 0) return '{}';
   if (!/\s/.test(s) && !/[{}]/.test(s)) return s;
-  if (isWrapped(s)) return s;
-  return `{${s}}`;
+  return braced(s);
+}
+
+/**
+ * 토큰을 이어붙인다.
+ * 여러 글자 이름(sin, alpha, over ...)은 앞뒤를 띄워야 다른 글자와 붙어 버리지 않는다.
+ * 한 글자 변수·숫자끼리는 붙여도 뜻이 같으므로 붙인다 (`d t` -> `dt`, `2 a` -> `2a`).
+ */
+function joinAtoms(parts: readonly string[]): string {
+  const tokens = parts.filter((s) => s.length > 0);
+  let out = '';
+  for (const token of tokens) {
+    if (out.length > 0 && needsSpace(out, token)) out += ' ';
+    out += token;
+  }
+  return out;
+}
+
+function needsSpace(prev: string, next: string): boolean {
+  // 여러 글자로 된 이름은 옆 글자와 붙으면 다른 낱말이 되어 버린다
+  if (/[A-Za-z]{2,}$/.test(prev) || /^[A-Za-z]{2,}/.test(next)) return true;
+  return false;
 }
 
 function textOf(node: MathNode | undefined): string {
@@ -130,7 +201,28 @@ function isFence(node: MathNode | undefined, closing: boolean): boolean {
   return set.has(text) && attr(node, 'stretchy') === 'true';
 }
 
-/** 여러 자식을 이어붙인다 (늘어나는 괄호 처리 포함) */
+/** 이 노드가 "큰 연산자 + 한계값" 형태면 그 연산자 이름을 돌려준다 */
+function naryName(node: MathNode | undefined): string | undefined {
+  if (!node) return undefined;
+  if (node.tag === 'mo') return BIG_OPERATORS[textOf(node).trim()];
+  switch (node.tag) {
+    case 'munderover':
+    case 'munder':
+    case 'mover':
+    case 'msubsup':
+    case 'msub':
+    case 'msup':
+      return BIG_OPERATORS[textOf(node.children?.[0]).trim()];
+    default:
+      return undefined;
+  }
+}
+
+function isRelation(node: MathNode | undefined): boolean {
+  return node?.tag === 'mo' && RELATIONS.has(textOf(node).trim());
+}
+
+/** 여러 자식을 이어붙인다 (늘어나는 괄호와 큰 연산자 처리 포함) */
 function convertRow(nodes: readonly MathNode[]): string {
   const children = nodes.filter(
     (n) => n.tag !== 'annotation' && n.tag !== 'annotation-xml' && n.tag !== 'mphantom',
@@ -150,7 +242,22 @@ function convertRow(nodes: readonly MathNode[]): string {
     return `left ${begChr} ${convertRow(inner)} right ${endChr}`;
   }
 
-  return children.map(convertNode).filter((s) => s.length > 0).join(' ');
+  const parts: string[] = [];
+  for (let i = 0; i < children.length; i += 1) {
+    const node = children[i];
+    if (naryName(node)) {
+      // 큰 연산자: 뒤따르는 식을 관계 기호 직전까지 모아 중괄호로 묶는다.
+      // 묶지 않으면 어디까지가 적분 대상인지 한글도 사람도 알 수 없다.
+      let end = i + 1;
+      while (end < children.length && !isRelation(children[end])) end += 1;
+      const operand = convertRow(children.slice(i + 1, end));
+      parts.push(operand.length > 0 ? `${convertNode(node)} ${braced(operand)}` : convertNode(node));
+      i = end - 1;
+      continue;
+    }
+    parts.push(convertNode(node));
+  }
+  return joinAtoms(parts);
 }
 
 function convertNode(node: MathNode | undefined): string {
@@ -177,18 +284,15 @@ function convertNode(node: MathNode | undefined): string {
     case 'mi': {
       const text = textOf(node).trim();
       if (text.length === 0) return '';
-      if (text.length === 1) return escapeAtom(text);
-      // sin/log 처럼 알려진 함수는 그대로 두면 한글이 정자체로 조판한다
-      if (FUNCTIONS.has(text)) return text;
-      return attr(node, 'mathvariant') === 'normal' ? quoted(text) : escapeAtom(text);
+      if (FUNCTIONS.has(text)) return text; // sin/log는 그대로 두면 한글이 정자체로 조판한다
+      if (text.length === 1 || SYMBOL_NAMES[text]) return atom(text);
+      return attr(node, 'mathvariant') === 'normal' ? quoted(text) : atom(text);
     }
 
     case 'mn':
     case 'mo':
-    case 'ms': {
-      const text = textOf(node).trim();
-      return BIG_OPERATORS[text] ?? escapeAtom(text);
-    }
+    case 'ms':
+      return atom(textOf(node).trim());
 
     case 'mtext': {
       // \text{...} — 공백과 한글을 그대로 살린다
@@ -202,36 +306,37 @@ function convertNode(node: MathNode | undefined): string {
     case 'mfrac': {
       // 선 없는 분수 = 이항계수 — 한글에서는 atop
       const noBar = /^0(px|em)?$/.test(attr(node, 'linethickness') ?? '');
-      return `${group(convertNode(kids[0]))} ${noBar ? 'atop' : 'over'} ${group(convertNode(kids[1]))}`;
+      return `${braced(convertNode(kids[0]))} ${noBar ? 'atop' : 'over'} ${braced(convertNode(kids[1]))}`;
     }
 
     case 'msqrt':
-      return `sqrt ${group(convertRow(kids))}`;
+      return `sqrt ${braced(convertRow(kids))}`;
 
     case 'mroot':
-      return `root ${group(convertNode(kids[1]))} of ${group(convertNode(kids[0]))}`;
+      return `root ${braced(convertNode(kids[1]))} of ${braced(convertNode(kids[0]))}`;
 
+    // 첨자는 밑동에 바로 붙이고 인자는 반드시 중괄호로 — `x_{1}`, `int_{0}^{T_{s}}`
     case 'msup':
-      return `${group(convertNode(kids[0]))} ^${group(convertNode(kids[1]))}`;
+      return `${base(convertNode(kids[0]))}^${braced(convertNode(kids[1]))}`;
     case 'msub':
-      return `${group(convertNode(kids[0]))} _${group(convertNode(kids[1]))}`;
+      return `${base(convertNode(kids[0]))}_${braced(convertNode(kids[1]))}`;
     case 'msubsup':
-      return `${group(convertNode(kids[0]))} _${group(convertNode(kids[1]))} ^${group(convertNode(kids[2]))}`;
+      return `${base(convertNode(kids[0]))}_${braced(convertNode(kids[1]))}^${braced(convertNode(kids[2]))}`;
 
     case 'mover': {
       const chr = textOf(kids[1]).trim();
-      if (BAR_CHARS.has(chr)) return `overline ${group(convertNode(kids[0]))}`;
+      if (BAR_CHARS.has(chr)) return `overline ${braced(convertNode(kids[0]))}`;
       const accent = ACCENTS[chr];
-      if (accent) return `${accent} ${group(convertNode(kids[0]))}`;
-      return `${group(convertNode(kids[0]))} ^${group(convertNode(kids[1]))}`;
+      if (accent) return `${accent} ${braced(convertNode(kids[0]))}`;
+      return `${base(convertNode(kids[0]))}^${braced(convertNode(kids[1]))}`;
     }
     case 'munder': {
       const chr = textOf(kids[1]).trim();
-      if (BAR_CHARS.has(chr)) return `underline ${group(convertNode(kids[0]))}`;
-      return `${group(convertNode(kids[0]))} _${group(convertNode(kids[1]))}`;
+      if (BAR_CHARS.has(chr)) return `underline ${braced(convertNode(kids[0]))}`;
+      return `${base(convertNode(kids[0]))}_${braced(convertNode(kids[1]))}`;
     }
     case 'munderover':
-      return `${group(convertNode(kids[0]))} _${group(convertNode(kids[1]))} ^${group(convertNode(kids[2]))}`;
+      return `${base(convertNode(kids[0]))}_${braced(convertNode(kids[1]))}^${braced(convertNode(kids[2]))}`;
 
     case 'mtable':
       return matrix(node);
