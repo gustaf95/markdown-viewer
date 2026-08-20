@@ -10,7 +10,8 @@ import type {
   DocTableCell,
   DocText,
 } from '../common/docmodel';
-import { mathToHwpScript } from './hwp-eqn';
+import { mathToHwpScript, measureMath } from './hwp-eqn';
+import type { EqMetrics } from './hwp-eqn';
 import { buildZip } from './zip';
 import type { ZipEntry } from './zip';
 
@@ -263,17 +264,18 @@ class SectionBuilder {
   }
 
   /** 수식 개체 — 한글의 네이티브 수식으로 들어간다 */
-  equation(script: string, size: number): string {
+  equation(script: string, size: number, metrics: EqMetrics): string {
     const id = this.charPrs.id({ size });
-    // 한글은 파일을 열 때 수식 크기를 다시 계산하므로 여기 값은 어림잡아도 된다.
-    // (일부러 틀린 값을 넣고 열어 봐도 조판 결과가 같았다)
-    const height = Math.round(size * 2.4);
-    const width = Math.min(Math.max(script.length * Math.round(size * 0.42), size * 4), TEXT_WIDTH);
+    // 한글은 파일을 열 때 이 값을 다시 계산하지 않고 그대로 쓴다 (수식을 편집해야 갱신된다).
+    // 상자가 실제보다 크면 인라인 수식이 글줄 위로 떠 보이므로 어림값이라도 맞춰 둔다.
+    const height = Math.max(Math.round((metrics.ascent + metrics.descent) * size), Math.round(size * 0.8));
+    const width = Math.min(Math.max(Math.round(metrics.width * size), size), TEXT_WIDTH);
+    const baseLine = Math.min(Math.max(Math.round((metrics.ascent / (metrics.ascent + metrics.descent)) * 100), 30), 95);
     return (
       `<hp:run charPrIDRef="${id}">` +
       `<hp:equation id="${this.nextShapeId()}" zOrder="${this.zOrder += 1}" numberingType="EQUATION"` +
       ' textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None"' +
-      ` version="Equation Version 60" baseLine="63" textColor="${TEXT_COLOR}"` +
+      ` version="Equation Version 60" baseLine="${baseLine}" textColor="${TEXT_COLOR}"` +
       ` baseUnit="${size}" lineMode="CHAR" font="HancomEQN">` +
       `<hp:sz width="${width}" widthRelTo="ABSOLUTE" height="${height}" heightRelTo="ABSOLUTE" protect="0"/>` +
       '<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0"' +
@@ -459,7 +461,7 @@ class DocConverter {
         case 'math': {
           const script = mathToHwpScript(item.math);
           out += script
-            ? this.sec.equation(script, base.size ?? BODY_SIZE)
+            ? this.sec.equation(script, base.size ?? BODY_SIZE, measureMath(item.math))
             : this.sec.run(item.tex ?? '', { ...base, font: FONT_MONO, color: MUTED_COLOR });
           break;
         }
@@ -616,7 +618,7 @@ class DocConverter {
       case 'mathblock': {
         const script = mathToHwpScript(block.math);
         const runs = script
-          ? this.sec.equation(script, BODY_SIZE)
+          ? this.sec.equation(script, BODY_SIZE, measureMath(block.math))
           : this.sec.run(block.tex ?? '', { font: FONT_MONO, color: MUTED_COLOR });
         this.sec.paragraph(runs, { align: 'CENTER', prev: 150, next: 150 });
         break;

@@ -380,3 +380,226 @@ export function mathToHwpScript(math: MathNode): string | null {
   const script = convertNode(math).replace(/\s+/g, ' ').trim();
   return script.length > 0 ? script : null;
 }
+
+// ---------------------------------------------------------------------------
+// 수식 상자 크기 어림
+//  - <hp:equation>은 상자의 폭·높이와 기준선 위치(baseLine, 높이에 대한 %)를 갖는다.
+//    한글은 파일을 열 때 이 값을 **다시 계산하지 않고** 그대로 쓴다 (수식을 편집해야 갱신된다).
+//    그래서 값이 어긋나면 인라인 수식이 글줄 위로 떠 보인다.
+//  - 조판을 흉내 낼 수는 없으니 MathML 구조에서 글자 크기(em) 단위로 어림한다.
+//    상수는 한글이 실제로 조판한 수식 12개의 값과 맞춰 보정했다.
+// ---------------------------------------------------------------------------
+
+/** 글자 크기(em) 기준 상자 치수 */
+export interface EqMetrics {
+  /** 기준선 위 높이 */
+  ascent: number;
+  /** 기준선 아래 깊이 */
+  descent: number;
+  width: number;
+}
+
+/** 평범한 글자 한 줄의 높이 — 한글 실측(975/1050, baseLine 86)에서 얻었다 */
+const GLYPH_ASCENT = 0.8;
+const GLYPH_DESCENT = 0.13;
+/** 첨자는 0.71배로 줄어 위/아래로 밀린다 */
+const SCRIPT_SCALE = 0.71;
+const SUP_SHIFT = 0.42;
+const SUB_SHIFT = 0.2;
+/** 분수 가로줄이 놓이는 높이 (수학 축) */
+const AXIS = 0.25;
+
+const ZERO: EqMetrics = { ascent: 0, descent: 0, width: 0 };
+
+function box(ascent: number, descent: number, width: number): EqMetrics {
+  return { ascent, descent, width };
+}
+
+function total(m: EqMetrics): number {
+  return m.ascent + m.descent;
+}
+
+/** 나란히 놓기: 폭은 더하고 높이는 큰 쪽을 따른다 */
+function beside(items: readonly EqMetrics[]): EqMetrics {
+  return items.reduce(
+    (acc, m) => box(Math.max(acc.ascent, m.ascent), Math.max(acc.descent, m.descent), acc.width + m.width),
+    ZERO,
+  );
+}
+
+/**
+ * 앞뒤에 여백이 붙는 연산자.
+ * MathML은 빼기를 U+2212(−)로, 곱을 ×로 주므로 ASCII만 보면 안 된다.
+ */
+const WIDE_OPERATORS = new Set([
+  '+', '-', '−', '±', '∓', '×', '÷', '⋅', '∗', '∘', '⊕', '⊗',
+  ...RELATIONS,
+]);
+
+/** 괄호는 글자보다 좁다 */
+const NARROW_CHARS = new Set(['(', ')', '[', ']', '{', '}', '|', '‖', '⟨', '⟩']);
+
+/** 글자 하나의 폭 (em) */
+function glyphWidth(text: string): number {
+  let width = 0;
+  for (const ch of text) {
+    if (WIDE_OPERATORS.has(ch)) width += 0.92;
+    else if (NARROW_CHARS.has(ch)) width += 0.45;
+    else if (ch === ',' || ch === '.') width += 0.35;
+    else width += 0.58;
+  }
+  return width;
+}
+
+/**
+ * 적분 기호는 그 자체로 키가 크고 한계값이 옆에 붙는다.
+ * ∑·∏는 글리프가 작은 대신 한계값이 위아래로 쌓여 커진다 — 둘을 다르게 잡아야 한다.
+ */
+const INTEGRAL_CHARS = new Set(['∫', '∬', '∭', '∮', '∯', '∰']);
+
+/** 한계값이 기호 위아래로 쌓이는 연산자인가 (∑·∏ 계열. 적분은 옆에 붙는다) */
+function stacksLimits(node: MathNode | undefined): boolean {
+  const text = textOf(node).trim();
+  return BIG_OPERATORS[text] !== undefined && !INTEGRAL_CHARS.has(text);
+}
+
+function measureRow(nodes: readonly MathNode[]): EqMetrics {
+  return beside(nodes.map(measure));
+}
+
+function measure(node: MathNode | undefined): EqMetrics {
+  if (!node) return ZERO;
+  const kids = node.children ?? [];
+
+  switch (node.tag) {
+    case 'annotation':
+    case 'annotation-xml':
+    case 'mphantom':
+      return ZERO;
+
+    case 'mi':
+    case 'mn':
+    case 'mo':
+    case 'ms':
+    case 'mtext': {
+      const text = textOf(node).trim();
+      if (text.length === 0) return ZERO;
+      // 큰 연산자는 글자보다 위아래로 크다
+      if (INTEGRAL_CHARS.has(text)) return box(1.55, 0.85, 0.8);
+      if (BIG_OPERATORS[text]) return box(1.0, 0.35, 0.95);
+      return box(GLYPH_ASCENT, GLYPH_DESCENT, glyphWidth(text));
+    }
+
+    case 'mspace':
+      return box(0, 0, 0.25);
+
+    case 'mfrac': {
+      const num = measure(kids[0]);
+      const den = measure(kids[1]);
+      return box(
+        AXIS + 0.12 + total(num),
+        Math.max(GLYPH_DESCENT, total(den) + 0.12 - AXIS),
+        Math.max(num.width, den.width) + 0.5,
+      );
+    }
+
+    case 'msqrt': {
+      const inner = measureRow(kids);
+      return box(inner.ascent + 0.18, inner.descent, inner.width + 0.85);
+    }
+    case 'mroot': {
+      const inner = measure(kids[0]);
+      return box(inner.ascent + 0.25, inner.descent, inner.width + 0.9);
+    }
+
+    // ∑·∏는 MathML이 옆첨자(msub/msup)로 주더라도 한글은 기호 위아래에 쌓는다.
+    // 우리가 내보내는 스크립트 기준으로 재야 하므로 여기서 갈라 준다.
+    case 'msup': {
+      const b = measure(kids[0]);
+      const s = measure(kids[1]);
+      if (stacksLimits(kids[0])) return box(b.ascent + SCRIPT_SCALE * total(s), b.descent, Math.max(b.width, SCRIPT_SCALE * s.width));
+      return box(Math.max(b.ascent, SUP_SHIFT + SCRIPT_SCALE * s.ascent), b.descent, b.width + SCRIPT_SCALE * s.width);
+    }
+    case 'msub': {
+      const b = measure(kids[0]);
+      const s = measure(kids[1]);
+      if (stacksLimits(kids[0])) return box(b.ascent, b.descent + SCRIPT_SCALE * total(s), Math.max(b.width, SCRIPT_SCALE * s.width));
+      return box(b.ascent, Math.max(b.descent, SUB_SHIFT + SCRIPT_SCALE * s.descent), b.width + SCRIPT_SCALE * s.width);
+    }
+    case 'msubsup': {
+      const b = measure(kids[0]);
+      const sub = measure(kids[1]);
+      const sup = measure(kids[2]);
+      if (stacksLimits(kids[0])) {
+        return box(
+          b.ascent + SCRIPT_SCALE * total(sup),
+          b.descent + SCRIPT_SCALE * total(sub),
+          Math.max(b.width, SCRIPT_SCALE * Math.max(sub.width, sup.width)),
+        );
+      }
+      return box(
+        Math.max(b.ascent, SUP_SHIFT + SCRIPT_SCALE * sup.ascent),
+        Math.max(b.descent, SUB_SHIFT + SCRIPT_SCALE * sub.descent),
+        b.width + SCRIPT_SCALE * Math.max(sub.width, sup.width),
+      );
+    }
+
+    // 위/아래에 붙는 것들. 강조기호는 살짝만 커지고, 큰 연산자의 한계값은 위아래로 쌓인다
+    case 'mover': {
+      const b = measure(kids[0]);
+      const o = measure(kids[1]);
+      if (ACCENTS[textOf(kids[1]).trim()] || BAR_CHARS.has(textOf(kids[1]).trim())) {
+        return box(b.ascent + 0.2, b.descent, b.width);
+      }
+      return box(b.ascent + SCRIPT_SCALE * total(o), b.descent, Math.max(b.width, SCRIPT_SCALE * o.width));
+    }
+    case 'munder': {
+      const b = measure(kids[0]);
+      const u = measure(kids[1]);
+      if (BAR_CHARS.has(textOf(kids[1]).trim())) return box(b.ascent, b.descent + 0.15, b.width);
+      return box(b.ascent, b.descent + SCRIPT_SCALE * total(u), Math.max(b.width, SCRIPT_SCALE * u.width));
+    }
+    case 'munderover': {
+      const b = measure(kids[0]);
+      const u = measure(kids[1]);
+      const o = measure(kids[2]);
+      return box(
+        b.ascent + SCRIPT_SCALE * total(o),
+        b.descent + SCRIPT_SCALE * total(u),
+        Math.max(b.width, SCRIPT_SCALE * Math.max(u.width, o.width)),
+      );
+    }
+
+    case 'mtable': {
+      const rows = kids.filter((r) => r.tag === 'mtr' || r.tag === 'mlabeledtr').map((r) => measureRow(r.children ?? []));
+      if (rows.length === 0) return ZERO;
+      const height = rows.reduce((sum, r) => sum + total(r) + 0.15, 0);
+      const width = rows.reduce((max, r) => Math.max(max, r.width), 0);
+      // 행렬은 수학 축을 기준으로 위아래 반씩 놓인다
+      return box(height / 2 + AXIS, Math.max(GLYPH_DESCENT, height / 2 - AXIS), width + 0.6);
+    }
+
+    default:
+      return measureRow(kids);
+  }
+}
+
+/**
+ * 한글은 같은 수식에도 경로에 따라 다른 상자를 준다.
+ * `EquationCreate`로 넣으면 딱 맞는 값을, 수식 편집기로 열었다 저장하면 조금 더 넉넉한 값을 쓴다.
+ * 사용자가 편집기로 손보면 후자로 바뀌므로 그쪽에 맞춰 둔다 — 그래야 나중에 수식을 건드려도
+ * 글줄 높이가 흔들리지 않는다. 계수는 편집기가 보정한 수식 12개와 비교해 얻었다.
+ */
+const EDITOR_HEIGHT_FACTOR = 1.07;
+const EDITOR_WIDTH_FACTOR = 1.04;
+
+/**
+ * 수식 상자 치수를 글자 크기(em) 단위로 어림한다.
+ * 늘어나는 괄호는 안쪽 높이를 따라가므로 폭만 조금 더한다.
+ */
+export function measureMath(math: MathNode): EqMetrics {
+  const m = measure(math);
+  if (total(m) === 0) return box(GLYPH_ASCENT, GLYPH_DESCENT, 1);
+  // 위아래를 같은 비율로 늘리므로 기준선 위치(baseLine)는 그대로 유지된다
+  return box(m.ascent * EDITOR_HEIGHT_FACTOR, m.descent * EDITOR_HEIGHT_FACTOR, m.width * EDITOR_WIDTH_FACTOR);
+}
