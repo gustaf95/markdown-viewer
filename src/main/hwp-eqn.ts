@@ -403,7 +403,7 @@ export interface EqMetrics {
 const GLYPH_ASCENT = 0.8;
 const GLYPH_DESCENT = 0.13;
 /** 첨자는 0.71배로 줄어 위/아래로 밀린다 */
-const SCRIPT_SCALE = 0.71;
+const SCRIPT_SCALE = 0.714; // 실측
 const SUP_SHIFT = 0.42;
 const SUB_SHIFT = 0.2;
 /** 분수 가로줄이 놓이는 높이 (수학 축) */
@@ -428,25 +428,51 @@ function beside(items: readonly EqMetrics[]): EqMetrics {
 }
 
 /**
- * 앞뒤에 여백이 붙는 연산자.
- * MathML은 빼기를 U+2212(−)로, 곱을 ×로 주므로 ASCII만 보면 안 된다.
+ * 한글 수식 글꼴(HancomEQN)의 글자 폭 (em).
+ * 한 줄에 같은 글자를 20개씩 넣어 한글에 조판시키고 폭을 나눠 실측했다.
+ * 이 글꼴은 1/28em 격자를 쓴다 — 값들이 0.357(10/28), 0.5(14/28) 처럼 떨어진다.
  */
-const WIDE_OPERATORS = new Set([
-  '+', '-', '−', '±', '∓', '×', '÷', '⋅', '∗', '∘', '⊕', '⊗',
-  ...RELATIONS,
-]);
+const GLYPH_WIDTHS: Record<string, number> = {
+  // 라틴 소문자
+  a: 0.5, b: 0.429, c: 0.429, d: 0.571, e: 0.429, f: 0.571, g: 0.5, h: 0.571,
+  i: 0.357, j: 0.357, k: 0.5, l: 0.339, m: 0.786, n: 0.571, o: 0.429, p: 0.5,
+  q: 0.5, r: 0.429, s: 0.429, t: 0.357, u: 0.571, v: 0.429, w: 0.786, x: 0.571,
+  y: 0.5, z: 0.429,
+  // 라틴 대문자
+  A: 0.786, B: 0.714, C: 0.643, D: 0.786, E: 0.643, F: 0.643, G: 0.714, H: 0.786,
+  I: 0.429, J: 0.5, K: 0.786, L: 0.643, M: 0.929, N: 0.786, O: 0.786, P: 0.643,
+  Q: 0.786, R: 0.714, S: 0.571, T: 0.786, U: 0.786, V: 0.786, W: 1.0, X: 0.714,
+  Y: 0.786, Z: 0.643,
+  // 기호
+  '=': 0.5, '+': 0.786, '-': 0.786, '−': 0.786, '/': 0.5,
+  '(': 0.357, ')': 0.357, '[': 0.357, ']': 0.357, '|': 0.357,
+  ',': 0.349, '.': 0.286, '!': 0.286, '<': 0.35, '>': 0.35,
+  '±': 0.786, '∓': 0.786, '×': 0.786, '÷': 0.786,
+  // 그리스 (이름표로 나가지만 폭은 글자 기준)
+  α: 0.571, β: 0.571, γ: 0.571, δ: 0.5, ε: 0.429, ϵ: 0.429, ζ: 0.5, η: 0.571,
+  θ: 0.5, ι: 0.357, κ: 0.571, λ: 0.5, μ: 0.571, ν: 0.5, ξ: 0.5, π: 0.571,
+  ρ: 0.5, σ: 0.5, τ: 0.5, υ: 0.571, ϕ: 0.571, φ: 0.571, χ: 0.571, ψ: 0.571, ω: 0.571,
+  Γ: 0.643, Δ: 0.714, Θ: 0.714, Λ: 0.714, Ξ: 0.643, Π: 0.786, Σ: 0.643,
+  Υ: 0.786, Φ: 0.786, Ψ: 0.786, Ω: 0.714,
+  // 한 칸을 통째로 쓰는 기호들
+  '∞': 1.0, '≤': 1.0, '≥': 1.0, '≠': 1.0, '≈': 1.0, '≡': 1.0, '∇': 1.0,
+  '∈': 1.0, '∉': 1.0, '⊂': 1.0, '⊃': 1.0, '∩': 1.0, '∪': 1.0,
+  '→': 1.0, '←': 1.0, '⇒': 1.0, '⇐': 1.0, '↦': 1.0,
+  '⋯': 1.0, '…': 1.0, '⋮': 0.5, '⋱': 1.0, '∠': 0.714, '∂': 0.5,
+};
 
-/** 괄호는 글자보다 좁다 */
-const NARROW_CHARS = new Set(['(', ')', '[', ']', '{', '}', '|', '‖', '⟨', '⟩']);
+/** 관계 기호는 앞뒤에 넓은 여백이, 이항 연산자는 좁은 여백이 붙는다 (TeX 관례와 같다) */
+const RELATION_SPACE = 0.56;
+const BINARY_SPACE = 0.44;
+const BINARY_OPS = new Set(['+', '-', '−', '±', '∓', '×', '÷', '⋅', '∗', '∘', '⊕', '⊗']);
 
-/** 글자 하나의 폭 (em) */
+/** 글자 한 덩어리의 폭 (em) */
 function glyphWidth(text: string): number {
   let width = 0;
   for (const ch of text) {
-    if (WIDE_OPERATORS.has(ch)) width += 0.92;
-    else if (NARROW_CHARS.has(ch)) width += 0.45;
-    else if (ch === ',' || ch === '.') width += 0.35;
-    else width += 0.58;
+    width += GLYPH_WIDTHS[ch] ?? (/[a-z]/.test(ch) ? 0.5 : /[A-Z]/.test(ch) ? 0.75 : /[0-9]/.test(ch) ? 0.5 : 0.55);
+    if (RELATIONS.has(ch)) width += RELATION_SPACE;
+    else if (BINARY_OPS.has(ch)) width += BINARY_SPACE;
   }
   return width;
 }
@@ -464,7 +490,14 @@ function stacksLimits(node: MathNode | undefined): boolean {
 }
 
 function measureRow(nodes: readonly MathNode[]): EqMetrics {
-  return beside(nodes.map(measure));
+  const items = nodes.map(measure);
+  const row = beside(items);
+  // 맨 앞에 오는 +/- 는 단항이라 앞뒤 여백이 붙지 않는다 (`-b`는 뺄셈이 아니다)
+  const first = nodes[0];
+  if (first?.tag === 'mo' && BINARY_OPS.has(textOf(first).trim())) {
+    return box(row.ascent, row.descent, row.width - BINARY_SPACE);
+  }
+  return row;
 }
 
 function measure(node: MathNode | undefined): EqMetrics {
@@ -483,7 +516,8 @@ function measure(node: MathNode | undefined): EqMetrics {
     case 'ms':
     case 'mtext': {
       const text = textOf(node).trim();
-      if (text.length === 0) return ZERO;
+      // 공백뿐인 mtext는 스크립트에서 `~`(온전한 한 칸)로 나간다
+      if (text.length === 0) return node.tag === 'mtext' ? box(0, 0, 0.5) : ZERO;
       // 큰 연산자는 글자보다 위아래로 크다
       if (INTEGRAL_CHARS.has(text)) return box(1.55, 0.85, 0.8);
       if (BIG_OPERATORS[text]) return box(1.0, 0.35, 0.95);
@@ -491,7 +525,7 @@ function measure(node: MathNode | undefined): EqMetrics {
     }
 
     case 'mspace':
-      return box(0, 0, 0.25);
+      return box(0, 0, 0.5); // `~`는 온전한 한 칸 (실측)
 
     case 'mfrac': {
       const num = measure(kids[0]);
@@ -499,13 +533,13 @@ function measure(node: MathNode | undefined): EqMetrics {
       return box(
         AXIS + 0.12 + total(num),
         Math.max(GLYPH_DESCENT, total(den) + 0.12 - AXIS),
-        Math.max(num.width, den.width) + 0.5,
+        Math.max(num.width, den.width) + 0.476, // 실측
       );
     }
 
     case 'msqrt': {
       const inner = measureRow(kids);
-      return box(inner.ascent + 0.18, inner.descent, inner.width + 0.85);
+      return box(inner.ascent + 0.18, inner.descent, inner.width + 0.805); // 근호 여백 실측
     }
     case 'mroot': {
       const inner = measure(kids[0]);
@@ -591,7 +625,8 @@ function measure(node: MathNode | undefined): EqMetrics {
  * 글줄 높이가 흔들리지 않는다. 계수는 편집기가 보정한 수식 12개와 비교해 얻었다.
  */
 const EDITOR_HEIGHT_FACTOR = 1.07;
-const EDITOR_WIDTH_FACTOR = 1.04;
+// 글자 폭은 실측표를 쓰지만 한글이 개체 좌우에 조금 더 여백을 둔다 (실측 결과 일정하게 5% 부족했다)
+const EDITOR_WIDTH_FACTOR = 1.05;
 
 /**
  * 수식 상자 치수를 글자 크기(em) 단위로 어림한다.
