@@ -60,6 +60,18 @@ const BIG_OPERATORS: Record<string, string> = {
 };
 
 /**
+ * ASCII로 바꿔야 하는 유니코드 연산자.
+ * KaTeX는 빼기를 U+2212(−)로 내보내는데, 한글 수식 편집기는 이 글자를 연산자가 아니라
+ * 일반 기호로 다뤄 앞뒤 여백이 어긋난다. ASCII 하이픈이 제대로 된 빼기 연산자다.
+ * 이름표와 달리 앞뒤에 공백을 넣지 않는다 (`a-b`).
+ */
+const ASCII_OPERATORS: Record<string, string> = {
+  '−': '-', // U+2212 빼기표
+  '∗': '*', // U+2217 별표 연산자
+  '∕': '/', // U+2215 나눗셈 사선
+};
+
+/**
  * 유니코드 기호 -> 한글 수식 이름표.
  * 여기 없는 기호는 유니코드 그대로 내보낸다 (그래도 조판된다).
  * 이름을 잘못 적으면 그 글자들이 변수로 찍혀 버리므로, 실제로 조판해 확인한 것만 넣는다.
@@ -112,12 +124,14 @@ const QUOTE_ONLY = /[\^_~`"]/;
 
 /** 기호/변수 한 덩어리를 스크립트 문자로 (이름표 치환 + 특수문자 escape) */
 function atom(text: string): string {
-  const named = SYMBOL_NAMES[text];
+  const named = ASCII_OPERATORS[text] ?? SYMBOL_NAMES[text];
   if (named) return named;
   let out = '';
   for (const ch of text) {
+    const ascii = ASCII_OPERATORS[ch];
     const name = SYMBOL_NAMES[ch];
-    if (name) out += ` ${name} `;
+    if (ascii) out += ascii;
+    else if (name) out += ` ${name} `;
     else if (ch === '"') out += '″'; // 따옴표는 문자열 안에 넣을 수 없어 비슷한 모양으로
     else if (QUOTE_ONLY.test(ch)) out += `"${ch}"`;
     else if (BACKSLASH_ESCAPE.test(ch)) out += `\\${ch}`;
