@@ -33,7 +33,8 @@ export type AppCommand =
   | 'save-close'
   | 'print'
   | 'export-html'
-  | 'export-docx';
+  | 'export-docx'
+  | 'export-hwpx';
 
 /** 파일 저장 결과 */
 export interface SaveResult {
@@ -52,17 +53,17 @@ export interface PrintResult {
   error?: string;
 }
 
-/** 내보내기 형식 (F-1101~) — HWPX는 추후 확장 */
-export type ExportFormat = 'html' | 'docx';
+/** 내보내기 형식 (F-1101~) */
+export type ExportFormat = 'html' | 'docx' | 'hwpx';
 
 /** renderer -> main 내보내기 요청 */
 export interface ExportRequest {
   format: ExportFormat;
-  /** 문서 제목 (HTML의 <title>, DOCX 문서 속성에 사용) */
+  /** 문서 제목 (HTML의 <title>, DOCX/HWPX 문서 속성에 사용) */
   title: string;
   /** html 형식: 내보낼 본문 HTML (sanitize된 #content의 innerHTML, 앱 전용 UI 제거 상태) */
   html?: string;
-  /** docx 형식: 보기용 DOM에서 만든 중간 문서 모델 */
+  /** docx/hwpx 형식: 보기용 DOM에서 만든 중간 문서 모델 */
   doc?: DocModel;
 }
 

@@ -6,6 +6,7 @@ import * as iconv from 'iconv-lite';
 import { AppCommand, EncodingChoice, ExportRequest, ExportResult, FileOpenedPayload, PrintResult, SaveResult } from '../common/types';
 import { buildExportedHtml } from './export-html';
 import { buildDocx } from './export-docx';
+import { buildHwpx } from './export-hwpx';
 
 const SUPPORTED_EXTENSIONS = ['.md', '.markdown', '.txt'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -31,6 +32,7 @@ const smokeExportPath = process.env.MDV_SMOKE_EXPORT ?? null;
 const EXPORT_FORMATS = {
   html: { label: 'HTML', ext: 'html', filter: 'HTML 문서' },
   docx: { label: 'DOCX', ext: 'docx', filter: 'Word 문서' },
+  hwpx: { label: 'HWPX', ext: 'hwpx', filter: '한글 문서' },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -250,6 +252,12 @@ function rebuildMenu(): void {
               enabled: currentFilePath !== null,
               click: () => sendCommand('export-docx'),
             },
+            {
+              label: 'HWPX (한글)...',
+              accelerator: 'CmdOrCtrl+Shift+W',
+              enabled: currentFilePath !== null,
+              click: () => sendCommand('export-hwpx'),
+            },
           ],
         },
         { type: 'separator' },
@@ -388,8 +396,10 @@ function setupSmokeTestIfRequested(): void {
   }
   let captureDelay = 3000;
   if (smokeExportPath) {
-    // MDV_SMOKE_EXPORT_FORMAT=docx 로 형식을 고를 수 있다 (기본 html)
-    const format: AppCommand = process.env.MDV_SMOKE_EXPORT_FORMAT === 'docx' ? 'export-docx' : 'export-html';
+    // MDV_SMOKE_EXPORT_FORMAT=docx|hwpx 로 형식을 고를 수 있다 (기본 html)
+    const chosen = process.env.MDV_SMOKE_EXPORT_FORMAT;
+    const format: AppCommand =
+      chosen === 'docx' ? 'export-docx' : chosen === 'hwpx' ? 'export-hwpx' : 'export-html';
     setTimeout(() => sendCommand(format), 2000);
     captureDelay = 5000;
   }
@@ -485,13 +495,13 @@ function registerIpc(): void {
     const win = mainWindow;
     if (!win) return { ok: false, error: '내보낼 창을 찾을 수 없습니다.' };
     const req = request as Partial<ExportRequest> | null;
-    if (!req || (req.format !== 'html' && req.format !== 'docx')) {
+    if (!req || !(req.format === 'html' || req.format === 'docx' || req.format === 'hwpx')) {
       return { ok: false, error: '잘못된 내보내기 요청입니다.' };
     }
     if (req.format === 'html' && typeof req.html !== 'string') {
       return { ok: false, error: '내보낼 본문을 받지 못했습니다.' };
     }
-    if (req.format === 'docx' && (!req.doc || !Array.isArray(req.doc.blocks))) {
+    if (req.format !== 'html' && (!req.doc || !Array.isArray(req.doc.blocks))) {
       return { ok: false, error: '내보낼 본문을 받지 못했습니다.' };
     }
     if (!currentFilePath) return { ok: false, error: '열려 있는 파일이 없습니다.' };
@@ -512,10 +522,13 @@ function registerIpc(): void {
 
     try {
       const title = typeof req.title === 'string' && req.title.trim() ? req.title.trim() : baseName;
+      const doc = { ...req.doc!, title };
       const data =
         req.format === 'html'
           ? Buffer.from(buildExportedHtml(req.html ?? '', title), 'utf8')
-          : await buildDocx({ ...req.doc!, title });
+          : req.format === 'docx'
+            ? await buildDocx(doc)
+            : buildHwpx(doc);
       await writeFileAtomic(targetPath, data);
       return { ok: true, filePath: targetPath };
     } catch (err) {

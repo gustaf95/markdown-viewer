@@ -298,10 +298,11 @@ async function exportDocument(format: ExportFormat): Promise<void> {
     }
     await waitForImages(content); // 로드되지 않은 이미지는 크기를 알 수 없고 임베드도 되지 않는다
     if (wasDark) applyThemeStyles('light');
+    // DOCX/HWPX는 같은 중간 모델(DocModel)을 쓰고, HTML만 본문 HTML을 그대로 보낸다
     const request =
-      format === 'docx'
-        ? { format, title: documentTitle(), doc: buildDocModel(content, documentTitle()) }
-        : { format, title: documentTitle(), html: buildExportBody() };
+      format === 'html'
+        ? { format, title: documentTitle(), html: buildExportBody() }
+        : { format, title: documentTitle(), doc: buildDocModel(content, documentTitle()) };
     const result = await mdv.exportDocument(request);
     if (result.ok) showToast(`내보냈습니다: ${result.filePath}`, 4000);
     else if (!result.canceled) showToast(result.error ?? '내보내기에 실패했습니다.', 5000);
@@ -487,6 +488,7 @@ mdv.onCommand((cmd) => {
     case 'print': void printDocument(); break;
     case 'export-html': void exportDocument('html'); break;
     case 'export-docx': void exportDocument('docx'); break;
+    case 'export-hwpx': void exportDocument('hwpx'); break;
     case 'save-close':
       void saveDocument().then((ok) => mdv.resolveClose(ok ? 'close' : 'cancel'));
       break;
