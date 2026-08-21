@@ -312,6 +312,7 @@ l=0.339  i=0.357  c=0.429  a=0.500  n=0.571  m=0.786  M=0.929
 
 ## 3. 기타 후보 기능
 
+- [ ] **가져오기**(HWPX·DOCX·HTML -> Markdown) — 설계는 [doc/README.md 18장](README.md#18-가져오기import-기능)에 정리했다
 - [ ] PDF로 내보내기 (`webContents.printToPDF`) — 인쇄 기능과 코드 상당 부분 공유 가능, 난이도 낮음
 - [ ] 목차(TOC) 사이드바 및 현재 위치 하이라이트
 - [ ] 문서 내 검색 (Ctrl+F)

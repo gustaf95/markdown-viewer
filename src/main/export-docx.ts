@@ -49,6 +49,11 @@ const CODE_SIZE = 18; // 9pt
 const PAGE_MARGIN_MM = 20;
 /** 본문에 들어갈 수 있는 최대 이미지 폭(px, 96dpi 기준) — A4 폭에서 좌우 여백을 뺀 값 */
 const MAX_IMAGE_WIDTH = Math.round(((210 - PAGE_MARGIN_MM * 2) / 25.4) * 96);
+/**
+ * 본문 폭 (twip). 표는 열 너비를 직접 지정해야 한다 —
+ * 폭만 백분율로 주면 docx가 열 정보(tblGrid)를 만들지 못해 Word에서 표가 찌그러진다.
+ */
+const CONTENT_WIDTH = convertMillimetersToTwip(210 - PAGE_MARGIN_MM * 2);
 
 const TEXT_COLOR = '1F2328';
 const MUTED_COLOR = '59636E';
@@ -222,13 +227,15 @@ function codeTable(lines: readonly DocCodeLine[]): Table {
       }),
   );
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: [CONTENT_WIDTH],
+    width: { size: CONTENT_WIDTH, type: WidthType.DXA },
     borders: allBorders(BORDER_COLOR),
     rows: [
       new TableRow({
         children: [
           new TableCell({
             children: paragraphs,
+            width: { size: CONTENT_WIDTH, type: WidthType.DXA },
             shading: { type: ShadingType.CLEAR, fill: CODE_BG },
             margins: { top: 120, bottom: 120, left: 160, right: 160 },
           }),
@@ -266,8 +273,11 @@ function cellParagraphs(cell: DocTableCell): Paragraph[] {
 }
 
 function docTable(rows: readonly DocTableCell[][]): Table {
+  const columns = Math.max(1, rows.reduce((max, cells) => Math.max(max, cells.length), 0));
+  const columnWidth = Math.floor(CONTENT_WIDTH / columns);
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: Array.from({ length: columns }, () => columnWidth),
+    width: { size: columnWidth * columns, type: WidthType.DXA },
     borders: allBorders(BORDER_COLOR),
     rows: rows.map(
       (cells) =>
@@ -277,6 +287,7 @@ function docTable(rows: readonly DocTableCell[][]): Table {
             (cell) =>
               new TableCell({
                 children: cellParagraphs(cell),
+                width: { size: columnWidth, type: WidthType.DXA },
                 shading: cell.header ? { type: ShadingType.CLEAR, fill: HEADER_BG } : undefined,
                 margins: { top: 60, bottom: 60, left: 120, right: 120 },
               }),
