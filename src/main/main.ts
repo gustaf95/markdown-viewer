@@ -3,10 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import * as iconv from 'iconv-lite';
-import { AppCommand, EncodingChoice, ExportRequest, ExportResult, FileOpenedPayload, PrintResult, SaveResult } from '../common/types';
+import { AppCommand, EncodingChoice, ExportRequest, ExportResult, FileOpenedPayload, ImportResult, PrintResult, SaveResult } from '../common/types';
 import { buildExportedHtml } from './export-html';
 import { buildDocx } from './export-docx';
 import { buildHwpx } from './export-hwpx';
+import { readDocx } from './import-docx';
 
 const SUPPORTED_EXTENSIONS = ['.md', '.markdown', '.txt'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -27,6 +28,8 @@ let forceClose = false;
 let lastSelfSaveAt = 0;
 /** 스모크 테스트에서 저장 대화상자 없이 내보낼 경로 (없으면 평소처럼 대화상자를 띄운다) */
 const smokeExportPath = process.env.MDV_SMOKE_EXPORT ?? null;
+/** 파일 선택 대화상자 없이 이 파일을 가져오는 스모크 테스트 훅 */
+const smokeImportPath = process.env.MDV_SMOKE_IMPORT ?? null;
 
 /** 내보내기 형식별 대화상자/확장자 정보 */
 const EXPORT_FORMATS = {
@@ -238,6 +241,12 @@ function rebuildMenu(): void {
         { type: 'separator' },
         { label: '인쇄...', accelerator: 'CmdOrCtrl+P', click: () => sendCommand('print') },
         {
+          label: '가져오기',
+          submenu: [
+            { label: 'DOCX (Word)...', click: () => sendCommand('import-docx') },
+          ],
+        },
+        {
           label: '내보내기',
           submenu: [
             {
@@ -403,6 +412,10 @@ function setupSmokeTestIfRequested(): void {
     setTimeout(() => sendCommand(format), 2000);
     captureDelay = 5000;
   }
+  if (smokeImportPath) {
+    setTimeout(() => sendCommand('import-docx'), 2000);
+    captureDelay = 5500;
+  }
   if (process.env.MDV_SMOKE_EDIT === '1') {
     setTimeout(() => sendCommand('edit-toggle'), 1500);
     captureDelay = 4500;
@@ -488,6 +501,31 @@ function registerIpc(): void {
       // 사용 가능한 프린터가 없으면 print()가 즉시 예외를 던진다
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: `인쇄를 시작할 수 없습니다: ${msg}` };
+    }
+  });
+  // 가져오기 (F-1201): main은 ZIP을 풀어 XML만 꺼내고, 해석은 renderer가 한다.
+  ipcMain.handle('file:import', async (_e, format: unknown): Promise<ImportResult> => {
+    const win = mainWindow;
+    if (!win) return { ok: false, error: '창을 찾을 수 없습니다.' };
+    if (format !== 'docx') return { ok: false, error: '지원하지 않는 형식입니다.' };
+    let filePath = smokeImportPath;
+    if (!filePath) {
+      const result = await dialog.showOpenDialog(win, {
+        title: 'DOCX 가져오기',
+        properties: ['openFile'],
+        filters: [{ name: 'Word 문서', extensions: ['docx'] }],
+      });
+      if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true };
+      filePath = result.filePaths[0];
+    }
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (stat.size > MAX_FILE_SIZE) return { ok: false, error: '파일이 너무 큽니다 (50MB 초과).' };
+      // 원본은 읽기만 한다 (F-1209)
+      return { ok: true, payload: { filePath, ...readDocx(filePath) } };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `가져오기에 실패했습니다: ${msg}` };
     }
   });
   // 내보내기 (F-1101, F-1102): 렌더러가 보기용 DOM에서 뽑은 내용을 파일로 저장한다.

@@ -1,7 +1,9 @@
 import { renderMarkdown } from './markdown';
 import { createEditor, EditorHandle } from './editor';
 import { buildDocModel } from './docmodel';
-import type { EncodingChoice, ExportFormat, FileOpenedPayload, MdvApi } from '../common/types';
+import { docxToDocModel } from './import-docx';
+import { docModelToMarkdown } from '../common/docmodel-to-markdown';
+import type { EncodingChoice, ExportFormat, FileOpenedPayload, ImportFormat, MdvApi } from '../common/types';
 
 declare global {
   interface Window { mdv: MdvApi }
@@ -57,6 +59,7 @@ let dirty = false;
 let printing = false;
 /** 내보내기(저장 대화상자 + 변환)가 진행 중인 동안 중복 요청을 막는다 */
 let exporting = false;
+let importing = false;
 
 function setDirty(next: boolean): void {
   if (dirty === next) return;
@@ -280,6 +283,51 @@ function documentTitle(): string {
   return fileName.replace(/\.(md|markdown|txt)$/i, '');
 }
 
+// ---------------------------------------------------------------------------
+// 가져오기 (F-1201)
+//  - main이 ZIP을 풀어 넘긴 XML을 여기서 DOMParser로 해석한다.
+//  - 결과는 저장되지 않은 문서로 열고, 사용자가 확인한 뒤 저장하게 한다 (F-1202).
+// ---------------------------------------------------------------------------
+async function importDocument(format: ImportFormat): Promise<void> {
+  if (importing) return; // 파일 선택 대화상자가 이미 떠 있음
+  importing = true;
+  try {
+    const result = await mdv.importDocument(format);
+    if (!result.ok || !result.payload) {
+      if (!result.canceled) showToast(result.error ?? '가져오기에 실패했습니다.', 5000);
+      return;
+    }
+    showLoading('가져오는 중...');
+    const payload = result.payload;
+    const fileName = payload.filePath.replace(/^.*[\\/]/, '');
+    const title = fileName.replace(/\.docx$/i, '');
+    // 무거운 파싱 전에 로딩 표시가 화면에 그려지도록 한 박자 넘긴다
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    const markdown = docModelToMarkdown(docxToDocModel(payload, title));
+
+    // 원본 폴더를 기준으로 두면 상대 경로 이미지가 자연스럽다.
+    // 이미지는 data URI로 들어 있으므로 dirUrl은 화면 표시에만 쓰인다.
+    const dirUrl = `file:///${payload.filePath.replace(/\\/g, '/').replace(/\/[^/]*$/, '')}/`;
+    renderDocument({
+      filePath: payload.filePath,
+      fileName: `${title}.md`,
+      dirUrl,
+      content: markdown,
+      encoding: 'utf-8',
+      reason: 'open',
+      updatedAt: Date.now(),
+    });
+    // 아직 .md로 저장되지 않은 상태임을 알린다
+    setDirty(true);
+    showToast(`${fileName}을(를) Markdown으로 가져왔습니다. 확인 후 저장하세요.`, 5000);
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : '가져오기에 실패했습니다.', 5000);
+  } finally {
+    hideLoading();
+    importing = false;
+  }
+}
+
 async function exportDocument(format: ExportFormat): Promise<void> {
   if (!currentFile) {
     showToast('내보낼 문서가 없습니다. 먼저 파일을 여세요.');
@@ -489,6 +537,7 @@ mdv.onCommand((cmd) => {
     case 'export-html': void exportDocument('html'); break;
     case 'export-docx': void exportDocument('docx'); break;
     case 'export-hwpx': void exportDocument('hwpx'); break;
+    case 'import-docx': void importDocument('docx'); break;
     case 'save-close':
       void saveDocument().then((ok) => mdv.resolveClose(ok ? 'close' : 'cancel'));
       break;

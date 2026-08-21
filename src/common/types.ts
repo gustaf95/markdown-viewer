@@ -34,7 +34,8 @@ export type AppCommand =
   | 'print'
   | 'export-html'
   | 'export-docx'
-  | 'export-hwpx';
+  | 'export-hwpx'
+  | 'import-docx';
 
 /** 파일 저장 결과 */
 export interface SaveResult {
@@ -77,6 +78,30 @@ export interface ExportResult {
   error?: string;
 }
 
+/** 가져오기 형식 (F-1201~) — HWPX·HTML은 추후 확장 */
+export type ImportFormat = 'docx';
+
+/** main -> renderer 로 넘기는 DOCX 부품 (renderer가 DOMParser로 해석한다) */
+export interface DocxImportPayload {
+  /** 원본 파일 경로 (가져온 뒤 저장 위치 제안에 쓴다) */
+  filePath: string;
+  document: string;
+  styles?: string;
+  numbering?: string;
+  rels?: string;
+  /** media 파일명 -> data URI */
+  media?: Record<string, string>;
+}
+
+/** 가져오기 결과 */
+export interface ImportResult {
+  ok: boolean;
+  /** 사용자가 파일 선택을 취소한 경우 true */
+  canceled?: boolean;
+  error?: string;
+  payload?: DocxImportPayload;
+}
+
 /** 인코딩 강제 지정 값 ('auto'면 자동 감지) */
 export type EncodingChoice = 'auto' | 'utf-8' | 'cp949' | 'euc-kr' | 'utf-16le';
 
@@ -95,6 +120,8 @@ export interface MdvApi {
   print(): Promise<PrintResult>;
   /** 현재 문서를 지정한 형식으로 내보내기 (저장 위치는 main의 대화상자에서 선택) */
   exportDocument(request: ExportRequest): Promise<ExportResult>;
+  /** 다른 형식의 문서를 열어 Markdown으로 가져오기 (파일 선택은 main의 대화상자) */
+  importDocument(format: ImportFormat): Promise<ImportResult>;
   /** 저장되지 않은 변경 여부를 main에 알림 (닫기 확인 대화상자용) */
   notifyDirty(dirty: boolean): void;
   /** 닫기 전 저장(save-close) 처리 결과 전달: 'close'면 창을 닫고 'cancel'이면 유지 */

@@ -103,3 +103,61 @@ export function buildZip(entries: readonly ZipEntry[]): Buffer {
 
   return Buffer.concat([...locals, centralBuf, end]);
 }
+
+// ---------------------------------------------------------------------------
+// ZIP 읽기 (F-1201) — 가져오기에서 .docx / .hwpx 를 푼다
+//  - 중앙 디렉터리를 훑어 항목 목록을 얻는다. 지역 헤더만 보고 훑으면
+//    데이터 서술자(스트리밍으로 만든 ZIP)를 만났을 때 길이를 알 수 없다.
+// ---------------------------------------------------------------------------
+
+/** ZIP 안의 파일 하나를 꺼낸다. 없으면 null */
+export function readZipEntry(zip: Buffer, name: string): Buffer | null {
+  const entries = readZip(zip);
+  return entries.get(name) ?? null;
+}
+
+/** ZIP 전체를 { 경로 -> 내용 }으로 푼다 */
+export function readZip(zip: Buffer): Map<string, Buffer> {
+  const out = new Map<string, Buffer>();
+  const end = findEndOfCentralDirectory(zip);
+  if (end < 0) throw new Error('ZIP 형식이 아닙니다.');
+
+  const count = zip.readUInt16LE(end + 10);
+  let pointer = zip.readUInt32LE(end + 16);
+
+  for (let i = 0; i < count; i += 1) {
+    if (pointer + 46 > zip.length || zip.readUInt32LE(pointer) !== 0x02014b50) break;
+    const method = zip.readUInt16LE(pointer + 10);
+    const compressedSize = zip.readUInt32LE(pointer + 20);
+    const nameLength = zip.readUInt16LE(pointer + 28);
+    const extraLength = zip.readUInt16LE(pointer + 30);
+    const commentLength = zip.readUInt16LE(pointer + 32);
+    const localOffset = zip.readUInt32LE(pointer + 42);
+    const name = zip.subarray(pointer + 46, pointer + 46 + nameLength).toString('utf8');
+    pointer += 46 + nameLength + extraLength + commentLength;
+
+    // 지역 헤더는 파일명/추가필드 길이가 중앙 디렉터리와 다를 수 있어 다시 읽는다
+    if (localOffset + 30 > zip.length || zip.readUInt32LE(localOffset) !== 0x04034b50) continue;
+    const localNameLength = zip.readUInt16LE(localOffset + 26);
+    const localExtraLength = zip.readUInt16LE(localOffset + 28);
+    const start = localOffset + 30 + localNameLength + localExtraLength;
+    const body = zip.subarray(start, start + compressedSize);
+
+    if (name.endsWith('/')) continue; // 디렉터리 항목
+    try {
+      out.set(name, method === 0 ? Buffer.from(body) : zlib.inflateRawSync(body));
+    } catch {
+      // 항목 하나가 깨져도 나머지는 살린다 (F-1208)
+    }
+  }
+  return out;
+}
+
+/** 중앙 디렉터리 끝 표지(EOCD)를 뒤에서부터 찾는다. 주석이 붙어 있을 수 있다 */
+function findEndOfCentralDirectory(zip: Buffer): number {
+  const min = Math.max(0, zip.length - 22 - 0xffff);
+  for (let i = zip.length - 22; i >= min; i -= 1) {
+    if (zip.readUInt32LE(i) === 0x06054b50) return i;
+  }
+  return -1;
+}
