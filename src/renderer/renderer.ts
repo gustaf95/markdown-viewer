@@ -2,6 +2,7 @@ import { renderMarkdown } from './markdown';
 import { createEditor, EditorHandle } from './editor';
 import { buildDocModel } from './docmodel';
 import { docxToDocModel } from './import-docx';
+import { hwpxToDocModel } from './import-hwpx';
 import { docModelToMarkdown } from '../common/docmodel-to-markdown';
 import type { EncodingChoice, ExportFormat, FileOpenedPayload, ImportFormat, MdvApi } from '../common/types';
 
@@ -300,10 +301,13 @@ async function importDocument(format: ImportFormat): Promise<void> {
     showLoading('가져오는 중...');
     const payload = result.payload;
     const fileName = payload.filePath.replace(/^.*[\\/]/, '');
-    const title = fileName.replace(/\.docx$/i, '');
+    const title = fileName.replace(/\.(docx|hwpx)$/i, '');
     // 무거운 파싱 전에 로딩 표시가 화면에 그려지도록 한 박자 넘긴다
     await new Promise((resolve) => window.setTimeout(resolve, 0));
-    const markdown = docModelToMarkdown(docxToDocModel(payload, title));
+    const model = payload.format === 'docx'
+      ? docxToDocModel(payload, title)
+      : hwpxToDocModel(payload, title);
+    const markdown = docModelToMarkdown(model);
 
     // 원본 폴더를 기준으로 두면 상대 경로 이미지가 자연스럽다.
     // 이미지는 data URI로 들어 있으므로 dirUrl은 화면 표시에만 쓰인다.
@@ -538,6 +542,7 @@ mdv.onCommand((cmd) => {
     case 'export-docx': void exportDocument('docx'); break;
     case 'export-hwpx': void exportDocument('hwpx'); break;
     case 'import-docx': void importDocument('docx'); break;
+    case 'import-hwpx': void importDocument('hwpx'); break;
     case 'save-close':
       void saveDocument().then((ok) => mdv.resolveClose(ok ? 'close' : 'cancel'));
       break;

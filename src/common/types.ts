@@ -35,7 +35,8 @@ export type AppCommand =
   | 'export-html'
   | 'export-docx'
   | 'export-hwpx'
-  | 'import-docx';
+  | 'import-docx'
+  | 'import-hwpx';
 
 /** 파일 저장 결과 */
 export interface SaveResult {
@@ -79,10 +80,11 @@ export interface ExportResult {
 }
 
 /** 가져오기 형식 (F-1201~) — HWPX·HTML은 추후 확장 */
-export type ImportFormat = 'docx';
+export type ImportFormat = 'docx' | 'hwpx';
 
-/** main -> renderer 로 넘기는 DOCX 부품 (renderer가 DOMParser로 해석한다) */
+/** main -> renderer 로 넘기는 문서 부품 (renderer가 DOMParser로 해석한다) */
 export interface DocxImportPayload {
+  format: 'docx';
   /** 원본 파일 경로 (가져온 뒤 저장 위치 제안에 쓴다) */
   filePath: string;
   document: string;
@@ -93,13 +95,25 @@ export interface DocxImportPayload {
   media?: Record<string, string>;
 }
 
+export interface HwpxImportPayload {
+  format: 'hwpx';
+  filePath: string;
+  /** Contents/section*.xml — 쪽 순서대로 */
+  sections: string[];
+  header?: string;
+  /** binaryItemIDRef -> data URI */
+  media?: Record<string, string>;
+}
+
+export type ImportPayload = DocxImportPayload | HwpxImportPayload;
+
 /** 가져오기 결과 */
 export interface ImportResult {
   ok: boolean;
   /** 사용자가 파일 선택을 취소한 경우 true */
   canceled?: boolean;
   error?: string;
-  payload?: DocxImportPayload;
+  payload?: ImportPayload;
 }
 
 /** 인코딩 강제 지정 값 ('auto'면 자동 감지) */

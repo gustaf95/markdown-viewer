@@ -8,6 +8,7 @@ import { buildExportedHtml } from './export-html';
 import { buildDocx } from './export-docx';
 import { buildHwpx } from './export-hwpx';
 import { readDocx } from './import-docx';
+import { readHwpx } from './import-hwpx';
 
 const SUPPORTED_EXTENSIONS = ['.md', '.markdown', '.txt'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
@@ -244,6 +245,7 @@ function rebuildMenu(): void {
           label: '가져오기',
           submenu: [
             { label: 'DOCX (Word)...', click: () => sendCommand('import-docx') },
+            { label: 'HWPX (한글)...', click: () => sendCommand('import-hwpx') },
           ],
         },
         {
@@ -413,7 +415,8 @@ function setupSmokeTestIfRequested(): void {
     captureDelay = 5000;
   }
   if (smokeImportPath) {
-    setTimeout(() => sendCommand('import-docx'), 2000);
+    const command: AppCommand = /\.hwpx$/i.test(smokeImportPath) ? 'import-hwpx' : 'import-docx';
+    setTimeout(() => sendCommand(command), 2000);
     captureDelay = 5500;
   }
   if (process.env.MDV_SMOKE_EDIT === '1') {
@@ -507,13 +510,16 @@ function registerIpc(): void {
   ipcMain.handle('file:import', async (_e, format: unknown): Promise<ImportResult> => {
     const win = mainWindow;
     if (!win) return { ok: false, error: '창을 찾을 수 없습니다.' };
-    if (format !== 'docx') return { ok: false, error: '지원하지 않는 형식입니다.' };
+    if (format !== 'docx' && format !== 'hwpx') return { ok: false, error: '지원하지 않는 형식입니다.' };
+    const spec = format === 'docx'
+      ? { title: 'DOCX 가져오기', name: 'Word 문서', ext: 'docx' }
+      : { title: 'HWPX 가져오기', name: '한글 문서', ext: 'hwpx' };
     let filePath = smokeImportPath;
     if (!filePath) {
       const result = await dialog.showOpenDialog(win, {
-        title: 'DOCX 가져오기',
+        title: spec.title,
         properties: ['openFile'],
-        filters: [{ name: 'Word 문서', extensions: ['docx'] }],
+        filters: [{ name: spec.name, extensions: [spec.ext] }],
       });
       if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true };
       filePath = result.filePaths[0];
@@ -522,7 +528,9 @@ function registerIpc(): void {
       const stat = await fs.promises.stat(filePath);
       if (stat.size > MAX_FILE_SIZE) return { ok: false, error: '파일이 너무 큽니다 (50MB 초과).' };
       // 원본은 읽기만 한다 (F-1209)
-      return { ok: true, payload: { filePath, ...readDocx(filePath) } };
+      return format === 'docx'
+        ? { ok: true, payload: { format, filePath, ...readDocx(filePath) } }
+        : { ok: true, payload: { format, filePath, ...readHwpx(filePath) } };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: `가져오기에 실패했습니다: ${msg}` };
